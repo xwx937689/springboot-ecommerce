@@ -1,0 +1,103 @@
+# 本地开发用覆盖文件（Windows / Docker Desktop）
+#
+# 背景：主文件 docker-compose.yml 里 frontend 服务使用远程 git 地址作为构建
+# 上下文（https://github.com/...），Docker Desktop 在 Windows 上不支持这种写法：
+#     failed to evaluate path "https://github.com/...#main":
+#     CreateFile D:\springboot-ecommerce\https:: The filename, directory name,
+#     or volume label syntax is incorrect.
+#
+# 这里把 frontend 归入独立的 "frontend" profile，默认不参与 up / build，
+# 后端 19 个服务不受影响。需要时（需先把前端仓库克隆到本地并改相对路径）：
+#     docker compose --profile frontend up -d --build
+#
+# 不需要这个文件时可随时删除。
+#
+# ---------------------------------------------------------------------------
+# 端口映射段（仅供 Phase 3 抓取 OpenAPI / Swagger 契约用）
+# ---------------------------------------------------------------------------
+# 主 docker-compose.yml 中仅 discovery-server 与基础设施暴露端口，
+# 11 个业务服务端口未映射到宿主机，且 api-gateway 路由未转发
+# /v3/api-docs 与 /swagger-ui，故无法从本机直接访问各服务 Swagger。
+# 为接口自动化（抓 OpenAPI JSON 当契约基线），临时暴露全部业务服务端口。
+# 仅用于本地"抓契约"，不需要时删除下面所有 ports 段即可。
+#
+# 抓取命令（PowerShell，务必用 curl.exe 而非 curl 别名）：
+#   mkdir openapi-contracts
+#   curl.exe http://localhost:8081/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/user-service.json
+#   curl.exe http://localhost:8082/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/product-service.json
+#   curl.exe http://localhost:8083/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/cart-service.json
+#   curl.exe http://localhost:8084/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/inventory-service.json
+#   curl.exe http://localhost:8085/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/payment-service.json
+#   curl.exe http://localhost:8086/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/order-service.json
+#   curl.exe http://localhost:8087/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/notification-service.json
+#   curl.exe http://localhost:8088/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/recommendation-service.json
+#   curl.exe http://localhost:8089/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/catalog-stream-service.json
+#   curl.exe http://localhost:8090/v3/api-docs | Out-File -Encoding utf8 openapi-contracts/seller-service.json
+
+services:
+  frontend:
+    profiles:
+      - frontend
+
+  # ---------------------------------------------------------------------------
+  # 开机自启段：基础设施与 config-server 原本没有 restart 策略，Windows 重启后
+  # 不会自动拉起（业务服务有 restart: unless-stopped 会自动起来，但连不上库）。
+  # 加上后，Docker Desktop 启动时全部容器自动恢复。
+  # ---------------------------------------------------------------------------
+  config-server:
+    restart: unless-stopped
+  postgres:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  rabbitmq:
+    restart: unless-stopped
+  kafka:
+    restart: unless-stopped
+  zipkin:
+    restart: unless-stopped
+  prometheus:
+    restart: unless-stopped
+  grafana:
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # 修复 discovery 竞态：discovery 曾在 config-server 就绪前启动，
+  # optional 配置导入回退为默认值（Eureka 自注册），导致 health 永远 DOWN、
+  # 卡住所有依赖它的业务服务。这里强制先等 config-server healthy。
+  # ---------------------------------------------------------------------------
+  discovery-server:
+    depends_on:
+      config-server:
+        condition: service_healthy
+
+  user-service:
+    ports:
+      - "8081:8081"
+  product-service:
+    ports:
+      - "8082:8082"
+  cart-service:
+    ports:
+      - "8083:8083"
+  inventory-service:
+    ports:
+      - "8084:8084"
+  payment-service:
+    ports:
+      - "8085:8085"
+  order-service:
+    ports:
+      - "8086:8086"
+  notification-service:
+    ports:
+      - "8087:8087"
+  recommendation-service:
+    ports:
+      - "8088:8088"
+  catalog-stream-service:
+    ports:
+      - "8089:8089"
+  seller-service:
+    ports:
+      - "8090:8090"
