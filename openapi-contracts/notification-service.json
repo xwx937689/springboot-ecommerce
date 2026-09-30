@@ -1,0 +1,1 @@
+{"openapi":"3.0.1","info":{"title":"Notification Service API","description":"Async notification consumer (RabbitMQ)","version":"v1"},"servers":[{"url":"/","description":"Default"}],"paths":{},"components":{}}

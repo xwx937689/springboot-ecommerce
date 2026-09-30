@@ -1,0 +1,883 @@
+{
+  "summary": {
+    "total": 27,
+    "passed": 11,
+    "failed": 16,
+    "pass_rate": 40.7,
+    "by": {
+      "service": {
+        "payment-service": {
+          "total": 27,
+          "passed": 11
+        }
+      },
+      "category": {
+        "positive": {
+          "total": 6,
+          "passed": 0
+        },
+        "negative": {
+          "total": 3,
+          "passed": 3
+        },
+        "auth": {
+          "total": 8,
+          "passed": 2
+        },
+        "not_found": {
+          "total": 5,
+          "passed": 4
+        },
+        "boundary": {
+          "total": 3,
+          "passed": 1
+        },
+        "conflict": {
+          "total": 2,
+          "passed": 1
+        }
+      },
+      "source": {
+        "rule": {
+          "total": 9,
+          "passed": 3
+        },
+        "ai": {
+          "total": 18,
+          "passed": 8
+        }
+      }
+    },
+    "finished_at": "2026-09-29T15:29:02.771358+00:00",
+    "login_error": "login HTTP 401: {'code': 'UNAUTHORIZED', 'message': 'Invalid credentials', 'status': 401, 'path': '/api/auth/login', 'traceId': '1225abcbc0604a9af1489ac328cc5a76', 'timestamp': '2026-09-29T15:29:02.692343994Z'}"
+  },
+  "results": [
+    {
+      "case_id": "payment-service__charge__positive-01",
+      "service": "payment-service",
+      "category": "positive",
+      "name": "charge 正向请求",
+      "source": "rule",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [],
+        "status_class": "2xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp",
+        "details"
+      ],
+      "elapsed_ms": 13
+    },
+    {
+      "case_id": "payment-service__charge__negative-01",
+      "service": "payment-service",
+      "category": "negative",
+      "name": "charge 非法请求体应4xx",
+      "source": "rule",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": true,
+      "expected": {
+        "status_codes": [],
+        "status_class": "4xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp",
+        "details"
+      ],
+      "elapsed_ms": 16
+    },
+    {
+      "case_id": "payment-service__refund__auth-01",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "refund 无token应401",
+      "source": "rule",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/1/refund",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          401
+        ],
+        "status_class": null,
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 20
+    },
+    {
+      "case_id": "payment-service__charge__auth-01",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "charge 无token应401",
+      "source": "rule",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          401
+        ],
+        "status_class": null,
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp",
+        "details"
+      ],
+      "elapsed_ms": 22
+    },
+    {
+      "case_id": "payment-service__get__positive-01",
+      "service": "payment-service",
+      "category": "positive",
+      "name": "get 正向请求",
+      "source": "rule",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/1",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [],
+        "status_class": "2xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 22
+    },
+    {
+      "case_id": "payment-service__get__notfound-01",
+      "service": "payment-service",
+      "category": "not_found",
+      "name": "get 不存在资源",
+      "source": "rule",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/999999999",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          404,
+          200,
+          400
+        ],
+        "status_class": null,
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 12
+    },
+    {
+      "case_id": "payment-service__refund__notfound-01",
+      "service": "payment-service",
+      "category": "not_found",
+      "name": "refund 不存在资源",
+      "source": "rule",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/999999999/refund",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          404,
+          200,
+          400
+        ],
+        "status_class": null,
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 27
+    },
+    {
+      "case_id": "payment-service__refund__positive-01",
+      "service": "payment-service",
+      "category": "positive",
+      "name": "refund 正向请求",
+      "source": "rule",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/1/refund",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [],
+        "status_class": "2xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 28
+    },
+    {
+      "case_id": "payment-service__get__auth-01",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "get 无token应401",
+      "source": "rule",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/1",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          401
+        ],
+        "status_class": null,
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 27
+    },
+    {
+      "case_id": "payment-service__charge__ai-03",
+      "service": "payment-service",
+      "category": "boundary",
+      "name": "支付金额为零或负数",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          400
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [
+        "message"
+      ],
+      "resp_preview": "",
+      "json_keys": [
+        "timestamp",
+        "status",
+        "error",
+        "path"
+      ],
+      "elapsed_ms": 9
+    },
+    {
+      "case_id": "payment-service__charge__ai-01",
+      "service": "payment-service",
+      "category": "positive",
+      "name": "正常发起支付扣款",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          200
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "data.paymentId",
+          "data.status"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "timestamp",
+        "status",
+        "error",
+        "path"
+      ],
+      "elapsed_ms": 14
+    },
+    {
+      "case_id": "payment-service__charge__ai-02",
+      "service": "payment-service",
+      "category": "negative",
+      "name": "缺少订单号发起支付",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          400
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp",
+        "details"
+      ],
+      "elapsed_ms": 10
+    },
+    {
+      "case_id": "payment-service__charge__ai-05",
+      "service": "payment-service",
+      "category": "not_found",
+      "name": "对不存在订单发起支付",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          404
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "timestamp",
+        "status",
+        "error",
+        "path"
+      ],
+      "elapsed_ms": 8
+    },
+    {
+      "case_id": "payment-service__charge__ai-06",
+      "service": "payment-service",
+      "category": "conflict",
+      "name": "重复提交同一订单支付",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          409
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "timestamp",
+        "status",
+        "error",
+        "path"
+      ],
+      "elapsed_ms": 14
+    },
+    {
+      "case_id": "payment-service__refund__ai-04",
+      "service": "payment-service",
+      "category": "boundary",
+      "name": "路径参数非整数触发校验失败",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/abc/refund",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          400
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [
+        "message"
+      ],
+      "resp_preview": "",
+      "json_keys": [
+        "timestamp",
+        "status",
+        "error",
+        "path"
+      ],
+      "elapsed_ms": 12
+    },
+    {
+      "case_id": "payment-service__refund__ai-03",
+      "service": "payment-service",
+      "category": "not_found",
+      "name": "退款不存在的支付单返回未找到",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/999999999/refund",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          404
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 12
+    },
+    {
+      "case_id": "payment-service__refund__ai-01",
+      "service": "payment-service",
+      "category": "positive",
+      "name": "对已支付订单发起退款成功",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/10001/refund",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          200
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "data"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 16
+    },
+    {
+      "case_id": "payment-service__refund__ai-02",
+      "service": "payment-service",
+      "category": "conflict",
+      "name": "重复退款同一支付单返回冲突",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/10002/refund",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [],
+        "status_class": "4xx",
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 15
+    },
+    {
+      "case_id": "payment-service__refund__ai-05",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "无令牌退款返回未认证",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/10001/refund",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          401
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 15
+    },
+    {
+      "case_id": "payment-service__charge__ai-04",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "未携带令牌发起支付",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments",
+      "status": 400,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          401
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "timestamp",
+        "status",
+        "error",
+        "path"
+      ],
+      "elapsed_ms": 26
+    },
+    {
+      "case_id": "payment-service__get__ai-04",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "越权查询他人支付单返回403或404",
+      "source": "ai",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/2002",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          403,
+          404
+        ],
+        "status_class": "4xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 8
+    },
+    {
+      "case_id": "payment-service__refund__ai-06",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "越权退款他人支付单被拒绝",
+      "source": "ai",
+      "method": "POST",
+      "url": "http://localhost:8085/api/payments/10003/refund",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [],
+        "status_class": "4xx",
+        "json_path_contains": [
+          "message"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 22
+    },
+    {
+      "case_id": "payment-service__get__ai-01",
+      "service": "payment-service",
+      "category": "positive",
+      "name": "查询存在的支付单详情",
+      "source": "ai",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/1001",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          200
+        ],
+        "status_class": null,
+        "json_path_contains": [
+          "data.id",
+          "data.status",
+          "data.amount"
+        ]
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 13
+    },
+    {
+      "case_id": "payment-service__get__ai-02",
+      "service": "payment-service",
+      "category": "not_found",
+      "name": "查询不存在的支付单返回404",
+      "source": "ai",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/999999999",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          404
+        ],
+        "status_class": "4xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 13
+    },
+    {
+      "case_id": "payment-service__get__ai-05",
+      "service": "payment-service",
+      "category": "negative",
+      "name": "路径参数为非整数返回400",
+      "source": "ai",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/abc",
+      "status": 400,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          400
+        ],
+        "status_class": "4xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "timestamp",
+        "status",
+        "error",
+        "path"
+      ],
+      "elapsed_ms": 13
+    },
+    {
+      "case_id": "payment-service__get__ai-06",
+      "service": "payment-service",
+      "category": "boundary",
+      "name": "路径参数为负数边界返回400或404",
+      "source": "ai",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/-1",
+      "status": 404,
+      "ok": true,
+      "expected": {
+        "status_codes": [
+          400,
+          404
+        ],
+        "status_class": "4xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 12
+    },
+    {
+      "case_id": "payment-service__get__ai-03",
+      "service": "payment-service",
+      "category": "auth",
+      "name": "未携带JWT查询支付单返回401",
+      "source": "ai",
+      "method": "GET",
+      "url": "http://localhost:8085/api/payments/1001",
+      "status": 404,
+      "ok": false,
+      "expected": {
+        "status_codes": [
+          401
+        ],
+        "status_class": "4xx",
+        "json_path_contains": []
+      },
+      "error": null,
+      "missing_fields": [],
+      "resp_preview": "",
+      "json_keys": [
+        "code",
+        "message",
+        "status",
+        "path",
+        "traceId",
+        "timestamp"
+      ],
+      "elapsed_ms": 24
+    }
+  ]
+}

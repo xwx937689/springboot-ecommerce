@@ -1,0 +1,12 @@
+# 环境变量与密钥，严禁提交
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# 执行产物（本地生成，不入库；基线分析目录除外）
+artifacts/*
+!artifacts/baseline-*/
