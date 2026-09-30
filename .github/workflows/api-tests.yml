@@ -1,0 +1,135 @@
+name: API Test Platform
+
+# Phase 12 - 把测试平台嵌入 CI：
+# 起被测栈(分阶段+看门狗) -> 抓 OpenAPI 契约 -> 解析 -> 生成用例 -> 执行 -> AI 归因 -> 上传报告
+#
+# LLM：默认 mock（纯规则基线，零密钥）。仓库 Secret 配置 DEEPSEEK_API_KEY 后自动切换
+# 为 DeepSeek 增强（schema 造数 + AI 用例 + AI 归因）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "infrastructure/**"
+      - "api-test-platform/**"
+      - ".github/workflows/api-tests.yml"
+  workflow_dispatch: {}
+
+jobs:
+  api-tests:
+    name: Contract -> Cases -> Execute -> Triage
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build backend images
+        run: docker compose build
+
+      # ---- 分阶段起栈（与 start-stack.ps1 同思路的 bash 版）----
+      - name: Start config-server + infra
+        run: docker compose up -d config-server postgres redis rabbitmq kafka zipkin prometheus grafana
+
+      - name: Wait for config-server healthy
+        run: |
+          for i in $(seq 1 40); do
+            st=$(docker inspect -f '{{.State.Health.Status}}' springboot-ecommerce-config-server-1 2>/dev/null || true)
+            [ "$st" = "healthy" ] && echo "config-server healthy" && exit 0
+            sleep 5
+          done
+          echo "::error::config-server not healthy in time"; docker compose logs config-server --tail 50; exit 1
+
+      - name: Start discovery-server (race-safe)
+        run: |
+          docker compose up -d discovery-server
+          for i in $(seq 1 30); do
+            st=$(docker inspect -f '{{.State.Health.Status}}' springboot-ecommerce-discovery-server-1 2>/dev/null || true)
+            [ "$st" = "healthy" ] && echo "discovery healthy" && exit 0
+            sleep 5
+          done
+          echo "::warning::discovery unhealthy, force-recreate once"
+          docker compose up -d --force-recreate discovery-server
+          sleep 40
+
+      - name: Start remaining services
+        run: docker compose up -d
+
+      - name: Watchdog - restart any business service that failed to boot
+        run: |
+          declare -A ports=(
+            [user-service]=8081 [product-service]=8082 [cart-service]=8083
+            [inventory-service]=8084 [payment-service]=8085 [order-service]=8086
+            [notification-service]=8087 [recommendation-service]=8088 [seller-service]=8090
+          )
+          for name in "${!ports[@]}"; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${ports[$name]}/actuator/health" || true)
+            if [ "$code" != "200" ]; then
+              echo "::warning::$name not healthy ($code), restarting"
+              docker compose restart "$name"
+              sleep 40
+            fi
+          done
+
+      # ---- 测试平台流水线 ----
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install platform
+        run: pip install -e api-test-platform
+
+      - name: Grab OpenAPI contracts
+        run: |
+          mkdir -p openapi-contracts
+          declare -A svc=(
+            [user-service]=8081 [product-service]=8082 [cart-service]=8083
+            [inventory-service]=8084 [payment-service]=8085 [order-service]=8086
+            [notification-service]=8087 [recommendation-service]=8088
+            [catalog-stream-service]=8089 [seller-service]=8090
+          )
+          for name in "${!svc[@]}"; do
+            curl -s --max-time 20 "http://localhost:${svc[$name]}/v3/api-docs" \
+              -o "openapi-contracts/$name.json" || echo "::warning::grab failed: $name"
+          done
+          ls -la openapi-contracts/
+
+      - name: Generate cases (mock baseline; DeepSeek if secret present)
+        working-directory: api-test-platform
+        run: |
+          if [ -n "$DEEPSEEK_API_KEY" ]; then
+            export LLM_PROVIDER=openai LLM_API_KEY="$DEEPSEEK_API_KEY"
+            export LLM_MODEL=deepseek-chat LLM_BASE_URL=https://api.deepseek.com/v1
+            echo "LLM: deepseek-chat enabled"
+          else
+            export LLM_PROVIDER=mock
+            echo "LLM: mock (rule baseline only)"
+          fi
+          python -m parser.cli --contracts ../openapi-contracts --out artifacts
+          python -m generator.cli
+
+      - name: Execute suite
+        working-directory: api-test-platform
+        run: python -m executor.cli
+
+      - name: AI failure triage
+        if: always()
+        working-directory: api-test-platform
+        run: python -m analyzer.cli
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-report
+          path: |
+            api-test-platform/artifacts/report.html
+            api-test-platform/artifacts/results.json
+            api-test-platform/artifacts/failure-report.json
+          if-no-files-found: ignore
