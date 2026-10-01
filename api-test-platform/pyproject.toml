@@ -1,3 +1,12 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# flat-layout 下有多个顶层目录（analyzer/executor/generator/parser + 非包目录），
+# 不显式声明时 setuptools 自动发现会报 "Multiple top-level packages" 秒败（CI 首跑实证）
+[tool.setuptools.packages.find]
+include = ["analyzer*", "executor*", "generator*", "parser*"]
+
 [project]
 name = "api-test-platform"
 version = "0.1.0"
