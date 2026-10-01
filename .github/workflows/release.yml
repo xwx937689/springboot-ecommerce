@@ -1,0 +1,59 @@
+name: Release — Tag -> Full Regression -> Gate -> GitHub Release
+
+# Phase 13 - 版本发布 -> 全量回归 -> 回归门禁 -> 发布
+#
+# 流程：
+#   1. push tag (v*) 触发
+#   2. 复用 api-tests.yml 完整测试环（起栈 -> 契约 -> 生成 -> 执行 -> 归因 -> 修复 -> 回归）
+#   3. 质量门禁：修复版通过率 >= GATE_RATE（默认 70%，可用仓库变量 RELEASE_GATE_RATE 覆盖）
+#   4. 过门禁 -> 创建 GitHub Release（自动生成 notes + 附回归报告 report.html）
+#   5. 未过门禁 -> workflow 失败，tag 存在但无 Release，发布被拦截
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  regression:
+    name: Full regression on tag
+    uses: ./.github/workflows/api-tests.yml
+    secrets: inherit
+
+  release:
+    name: Quality gate + GitHub Release
+    needs: regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download regression report (same run artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: api-test-report
+          path: regression-report
+
+      - name: Quality gate
+        env:
+          GATE_RATE: ${{ vars.RELEASE_GATE_RATE || '70' }}
+          PASS_RATE: ${{ needs.regression.outputs.pass_rate }}
+        run: |
+          echo "回归通过率: ${PASS_RATE}%  门禁: ${GATE_RATE}%"
+          if ! awk -v a="$PASS_RATE" -v b="$GATE_RATE" 'BEGIN { exit !(a >= b) }'; then
+            echo "::error::回归通过率 ${PASS_RATE}% 低于发布门禁 ${GATE_RATE}%，禁止发布"
+            exit 1
+          fi
+          echo "::notice::门禁通过，允许发布"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            regression-report/report.html

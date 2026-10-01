@@ -15,12 +15,17 @@ on:
       - "api-test-platform/**"
       - ".github/workflows/api-tests.yml"
   workflow_dispatch: {}
+  # Phase 13 - 可复用：release.yml 打 tag 后调用本 workflow 做全量回归
+  workflow_call: {}
 
 jobs:
   api-tests:
     name: Contract -> Cases -> Execute -> Triage
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # Phase 13 - 输出修复版回归通过率，供 release.yml 做发布门禁
+    outputs:
+      pass_rate: ${{ steps.rate.outputs.pass_rate }}
 
     env:
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -133,6 +138,15 @@ jobs:
         if: always()
         working-directory: api-test-platform
         run: python -m executor.cli --cases artifacts/testcases-repaired.json
+
+      - name: Capture regression pass rate (Phase 13 release gate input)
+        id: rate
+        if: always()
+        working-directory: api-test-platform
+        run: |
+          rate=$(python -c "import json; print(json.load(open('artifacts/results.json', encoding='utf-8'))['summary']['pass_rate'])" 2>/dev/null || echo 0)
+          echo "pass_rate=$rate" >> "$GITHUB_OUTPUT"
+          echo "Regression pass rate: ${rate}%"
 
       - name: Upload test report
         if: always()
