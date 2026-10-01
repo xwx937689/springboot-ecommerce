@@ -148,6 +148,13 @@ jobs:
           echo "pass_rate=$rate" >> "$GITHUB_OUTPUT"
           echo "Regression pass rate: ${rate}%"
 
+      # 可观测性：诊断数据（通过率/归因分类/数据链笔记）落在 run 页面的 Job Summary，
+      # 公开可见、无需翻日志——v0.1.0 门禁复盘时暴露的可观测性缺口
+      - name: Publish regression digest to Job Summary
+        if: always()
+        working-directory: api-test-platform
+        run: python -m analyzer.summary
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
