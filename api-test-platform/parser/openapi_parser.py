@@ -52,9 +52,13 @@ def _is_public(path: str) -> bool:
     return any(path.startswith(p) or path == p for p in PUBLIC_PATH_PREFIXES)
 
 
-def _infer_auth(path: str, service: str = "") -> AuthType:
+def _infer_auth(path: str, service: str = "", method: str = "GET") -> AuthType:
     if service in OPEN_SERVICES:
         return AuthType.NONE
+    # /api/products 仅 GET 读公开；写操作需 ADMIN（2026-10-01 probe 实证，
+    # 此前整个前缀被误判公开导致 17 条用例空头 401）
+    if path.startswith("/api/products") and method.upper() != "GET":
+        return AuthType.JWT
     return AuthType.NONE if _is_public(path) else AuthType.JWT
 
 
@@ -129,7 +133,7 @@ def parse_file(path: Path, service_hint: str | None = None) -> ServiceContract:
                     method=_method_from_str(http_method),
                     path=path,
                     summary=op.get("summary") or op.get("description"),
-                    auth=_infer_auth(path, service),
+                    auth=_infer_auth(path, service, http_method),
                     parameters=params,
                     request_body=rb,
                     responses=responses,
