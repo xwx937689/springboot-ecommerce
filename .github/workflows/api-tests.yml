@@ -123,6 +123,17 @@ jobs:
         working-directory: api-test-platform
         run: python -m analyzer.cli
 
+      # Phase 10/7 迭代环：预期修复锚定本轮实测（状态会随数据链漂移，每轮重锚定）
+      - name: Repair expectations (anchored to this run)
+        if: always()
+        working-directory: api-test-platform
+        run: python -m analyzer.cli --repair-only
+
+      - name: Regression on repaired suite
+        if: always()
+        working-directory: api-test-platform
+        run: python -m executor.cli --cases artifacts/testcases-repaired.json
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
