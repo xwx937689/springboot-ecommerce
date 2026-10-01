@@ -13,7 +13,7 @@ A production-grade Spring Boot 3 / Spring Cloud 2024 microservice e-commerce pla
 Every dependency lives inside containers. From a fresh clone:
 
 ```bash
-git clone https://github.com/eaaslan/springboot-ecommerce.git
+git clone https://github.com/xwx937689/springboot-ecommerce.git
 cd springboot-ecommerce
 docker compose up --build
 ```
@@ -150,7 +150,7 @@ That's it. Docker handles everything else (the Maven build runs *inside* the bui
 `docker-compose.yml` is self-contained. It builds every backend service from this repo via the root `Dockerfile`, and clones + builds the frontend straight from GitHub via Buildx git-context. No GHCR login, no sibling repo, no Maven on your machine.
 
 ```bash
-git clone https://github.com/eaaslan/springboot-ecommerce.git
+git clone https://github.com/xwx937689/springboot-ecommerce.git
 cd springboot-ecommerce
 
 # First time: ~6–10 minutes (Maven dependency download + 13-service build).
@@ -446,7 +446,7 @@ For an actual VM deploy (Oracle Cloud Ampere A1, AWS EC2, Hetzner, …):
 2. **Install Docker + Compose v2**: `curl -fsSL https://get.docker.com | sh; sudo usermod -aG docker $USER`
 3. **Clone the repo and bring up the stack** with one command (the same one you'd run locally):
    ```bash
-   git clone https://github.com/eaaslan/springboot-ecommerce.git
+   git clone https://github.com/xwx937689/springboot-ecommerce.git
    cd springboot-ecommerce
    echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
    docker compose --env-file .env up -d --build

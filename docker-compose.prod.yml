@@ -1,7 +1,7 @@
 # Production-like local stack: pulls service images from GHCR + brings up dependencies.
 #
 # Prerequisites:
-#   1. CD workflow has run on main, images live at ghcr.io/eaaslan/ecommerce-*:latest
+#   1. CD workflow has run on main, images live at ghcr.io/xwx937689/ecommerce-*:latest
 #   2. `docker login ghcr.io -u <github-user> -p <PAT>` (read:packages scope)
 #   3. Set host environment vars before `up` if you want to override secrets
 #
@@ -91,7 +91,7 @@ services:
     image: openzipkin/zipkin:3
 
   config-server:
-    image: ghcr.io/eaaslan/ecommerce-config-server:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-config-server:${IMAGE_TAG:-latest}
     ports: ["8888:8888"]
     environment:
       SPRING_PROFILES_ACTIVE: docker
@@ -103,7 +103,7 @@ services:
     restart: unless-stopped
 
   discovery-server:
-    image: ghcr.io/eaaslan/ecommerce-discovery-server:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-discovery-server:${IMAGE_TAG:-latest}
     ports: ["8761:8761"]
     environment:
       SPRING_PROFILES_ACTIVE: docker
@@ -120,7 +120,7 @@ services:
 
   api-gateway:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-api-gateway:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-api-gateway:${IMAGE_TAG:-latest}
     ports: ["8080:8080"]
     depends_on:
       config-server: { condition: service_healthy }
@@ -133,7 +133,7 @@ services:
 
   user-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-user-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-user-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -141,7 +141,7 @@ services:
 
   product-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-product-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-product-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -149,7 +149,7 @@ services:
 
   cart-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-cart-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-cart-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -157,7 +157,7 @@ services:
 
   inventory-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-inventory-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-inventory-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -165,7 +165,7 @@ services:
 
   payment-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-payment-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-payment-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -173,7 +173,7 @@ services:
 
   order-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-order-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-order-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -183,7 +183,7 @@ services:
 
   notification-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-notification-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-notification-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -193,14 +193,14 @@ services:
 
   recommendation-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-recommendation-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-recommendation-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
 
   catalog-stream-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-catalog-stream-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-catalog-stream-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -209,7 +209,7 @@ services:
   # Marketplace V1+ — multi-seller. Needs sellerdb (created by docker/postgres/init.sql).
   seller-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-seller-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-seller-service:${IMAGE_TAG:-latest}
     depends_on:
       config-server: { condition: service_healthy }
       discovery-server: { condition: service_healthy }
@@ -221,7 +221,7 @@ services:
   # publishes it). 'build:' is the local-dev fallback — runs when you pass
   # --build to docker compose, expecting the FE repo at ../springboot-ecommerce-frontend.
   frontend:
-    image: ghcr.io/eaaslan/ecommerce-frontend:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-frontend:${IMAGE_TAG:-latest}
     build:
       context: ../springboot-ecommerce-frontend
     ports: ["80:80"]

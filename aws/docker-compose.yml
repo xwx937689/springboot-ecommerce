@@ -56,14 +56,14 @@ services:
     restart: unless-stopped
 
   config-server:
-    image: ghcr.io/eaaslan/ecommerce-config-server:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-config-server:${IMAGE_TAG:-latest}
     environment:
       SPRING_PROFILES_ACTIVE: "native,docker"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75"
     restart: unless-stopped
 
   discovery-server:
-    image: ghcr.io/eaaslan/ecommerce-discovery-server:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-discovery-server:${IMAGE_TAG:-latest}
     environment:
       SPRING_PROFILES_ACTIVE: docker
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75"
@@ -73,12 +73,12 @@ services:
 
   api-gateway:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-api-gateway:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-api-gateway:${IMAGE_TAG:-latest}
     depends_on: [config-server, discovery-server, redis]
 
   user-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-user-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-user-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/userdb
@@ -87,7 +87,7 @@ services:
 
   product-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-product-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-product-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/productdb
@@ -96,11 +96,11 @@ services:
 
   cart-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-cart-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-cart-service:${IMAGE_TAG:-latest}
 
   inventory-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-inventory-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-inventory-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/inventorydb
@@ -109,7 +109,7 @@ services:
 
   payment-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-payment-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-payment-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/paymentdb
@@ -121,7 +121,7 @@ services:
 
   order-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-order-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-order-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/orderdb
@@ -131,7 +131,7 @@ services:
 
   notification-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-notification-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-notification-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/notificationdb
@@ -141,11 +141,11 @@ services:
 
   recommendation-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-recommendation-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-recommendation-service:${IMAGE_TAG:-latest}
 
   catalog-stream-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-catalog-stream-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-catalog-stream-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_R2DBC_URL: r2dbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/productdb
@@ -154,7 +154,7 @@ services:
 
   seller-service:
     <<: *spring-app-defaults
-    image: ghcr.io/eaaslan/ecommerce-seller-service:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-seller-service:${IMAGE_TAG:-latest}
     environment:
       <<: *spring-env
       SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/sellerdb
@@ -162,7 +162,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
 
   frontend:
-    image: ghcr.io/eaaslan/ecommerce-frontend:${IMAGE_TAG:-latest}
+    image: ghcr.io/xwx937689/ecommerce-frontend:${IMAGE_TAG:-latest}
     ports: ["80:80"]
     depends_on: [api-gateway]
     restart: unless-stopped

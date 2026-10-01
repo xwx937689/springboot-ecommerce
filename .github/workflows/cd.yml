@@ -44,13 +44,16 @@ jobs:
           JIB_USER: ${{ github.actor }}
           JIB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Image name (ghcr.io/eaaslan/ecommerce-<artifactId>) lives in the
+          # Image name (ghcr.io/<owner>/ecommerce-<artifactId>) lives in the
           # parent pom's <pluginManagement>; Maven substitutes ${project.artifactId}
-          # per module. Don't override via -Djib.to.image= — system properties are
+          # per module. The <owner> part comes from the pom property ${image.owner},
+          # overridden here from github.repository_owner (lowercase) — 仓库迁移时
+          # 不用改 pom。Don't override via -Djib.to.image= — system properties are
           # literal strings and Maven won't interpolate them.
           # shared/common is excluded — it's a JAR library, not a service.
           mvn -B -ntp -DskipTests \
             -pl '!shared/common' \
+            -Dimage.owner="${{ steps.owner.outputs.lower }}" \
             -Djib.to.auth.username="$JIB_USER" \
             -Djib.to.auth.password="$JIB_TOKEN" \
             -Djib.to.tags="${{ github.sha }},latest" \
