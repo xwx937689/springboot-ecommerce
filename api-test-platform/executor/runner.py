@@ -151,7 +151,8 @@ def run_case(client: httpx.Client, auth: AuthProvider, case: dict, registry: dic
     url = f"http://localhost:{port}{_render_path(req['path_template'], req.get('path_params'))}"
     headers = {
         **case["request"].get("headers", {}),
-        **auth.headers_for(service, req.get("auth", "none"), req.get("path_template", "")),
+        **auth.headers_for(service, req.get("auth", "none"), req.get("path_template", ""),
+                           method=req.get("method", "GET")),
     }
 
     started = time.perf_counter()

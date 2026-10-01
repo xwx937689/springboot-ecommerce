@@ -123,14 +123,25 @@ class AuthProvider:
                 self.login_error = f"login 异常: {exc}"
         return self._token
 
-    def headers_for(self, service: str, auth: str, path: str = "") -> dict[str, str]:
-        """按服务与用例 auth 要求生成注入头；路径决定角色（ADMIN 专属路径）。"""
+    def headers_for(self, service: str, auth: str, path: str = "",
+                    method: str = "GET") -> dict[str, str]:
+        """按服务与用例 auth 要求生成注入头；路径+方法决定角色。
+
+        角色语义（2026-10-01 复盘归因 + probe 实证）：
+          - /api/admin/**、/api/coupons**、/api/sellers/admin*  -> ADMIN
+          - product-service 写操作（POST/PUT/PATCH/DELETE）      -> ADMIN（probe 实证）
+          - /api/seller-orders/**（卖家侧子订单/退货决策）        -> SELLER
+          - seller-service 其余（apply/me/updateMe/listings）    -> SELLER
+          - 其余                                                 -> USER
+        """
         if auth != "jwt":
             return {}
         if service in HEADER_AUTH_SERVICES:
-            if path.startswith(("/api/coupons", "/api/admin")):
+            if path.startswith(("/api/admin", "/api/coupons", "/api/sellers/admin")):
                 role = "ADMIN"
-            elif service == "seller-service":
+            elif service == "product-service" and method.upper() != "GET":
+                role = "ADMIN"
+            elif path.startswith("/api/seller-orders") or service == "seller-service":
                 role = "SELLER"
             else:
                 role = "USER"
