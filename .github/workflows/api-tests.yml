@@ -16,7 +16,13 @@ on:
       - ".github/workflows/api-tests.yml"
   workflow_dispatch: {}
   # Phase 13 - 可复用：release.yml 打 tag 后调用本 workflow 做全量回归
-  workflow_call: {}
+  workflow_call:
+    # 可复用 workflow 的 outputs 必须在 workflow_call 层映射，
+    # 仅 job 层 outputs 调用方读不到（v0.1.0 门禁误拦的根因）
+    outputs:
+      pass_rate:
+        description: 修复版回归通过率（release 门禁输入）
+        value: ${{ jobs.api-tests.outputs.pass_rate }}
 
 jobs:
   api-tests:

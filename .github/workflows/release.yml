@@ -40,11 +40,13 @@ jobs:
       - name: Quality gate
         env:
           GATE_RATE: ${{ vars.RELEASE_GATE_RATE || '70' }}
-          PASS_RATE: ${{ needs.regression.outputs.pass_rate }}
         run: |
-          echo "回归通过率: ${PASS_RATE}%  门禁: ${GATE_RATE}%"
-          if ! awk -v a="$PASS_RATE" -v b="$GATE_RATE" 'BEGIN { exit !(a >= b) }'; then
-            echo "::error::回归通过率 ${PASS_RATE}% 低于发布门禁 ${GATE_RATE}%，禁止发布"
+          # 直接从 artifact 的 results.json 读通过率：不依赖 reusable workflow
+          # outputs 的传播（v0.1.0 误拦根因），re-run failed jobs 也能拿到真实值
+          rate=$(python -c "import json; print(json.load(open('regression-report/results.json', encoding='utf-8'))['summary']['pass_rate'])" 2>/dev/null || echo 0)
+          echo "回归通过率: ${rate}%  门禁: ${GATE_RATE}%"
+          if ! awk -v a="$rate" -v b="$GATE_RATE" 'BEGIN { exit !(a >= b) }'; then
+            echo "::error::回归通过率 ${rate}% 低于发布门禁 ${GATE_RATE}%，禁止发布"
             exit 1
           fi
           echo "::notice::门禁通过，允许发布"
