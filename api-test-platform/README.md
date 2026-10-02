@@ -20,9 +20,9 @@
 | 10 | AI Repair + Regression | ✅ (每轮重锚定, expected_original 审计留痕) |
 | 11 | Git + CI | ✅ |
 | 12 | CI/CD 自动部署 | ✅ (api-tests.yml 全环入 CI) |
-| 13 | 版本发布→全量回归 | 🚧 当前 (tag→回归→门禁→GitHub Release) |
-| 14 | 故障注入+复杂场景 | ⬜ |
-| 15 | 性能/稳定性/可观测性 | ⬜ |
+| 13 | 版本发布→全量回归 | ✅ (v0.1.1 Release, 门禁把关) |
+| 14 | 故障注入+复杂场景 | ✅ (chaos/ 包, S1 降级 PASS, S2/S3 抓到 cart 跨服务缺陷) |
+| 15 | 性能/稳定性/可观测性 | ✅ (perf/ 基线入 CI, 四层观测合一 Job Summary) |
 
 ## 快速开始
 
