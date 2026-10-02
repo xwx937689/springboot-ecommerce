@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 # flat-layout 下有多个顶层目录（analyzer/executor/generator/parser + 非包目录），
 # 不显式声明时 setuptools 自动发现会报 "Multiple top-level packages" 秒败（CI 首跑实证）
 [tool.setuptools.packages.find]
-include = ["analyzer*", "chaos*", "executor*", "generator*", "parser*"]
+include = ["analyzer*", "chaos*", "executor*", "generator*", "parser*", "perf*"]
 
 [project]
 name = "api-test-platform"

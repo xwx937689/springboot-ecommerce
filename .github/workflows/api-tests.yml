@@ -169,6 +169,13 @@ jobs:
         working-directory: api-test-platform
         run: python -m chaos.cli
 
+      # Phase 15 - 性能基准：公开读端点 RPS + 延迟分位数，纯观测不阻断
+      - name: Performance baseline (Phase 15)
+        if: success()
+        continue-on-error: true
+        working-directory: api-test-platform
+        run: python -m perf.cli --requests 150 --workers 10
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4

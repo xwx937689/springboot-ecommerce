@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -77,10 +78,45 @@ def build_digest(artifacts_dir: Path) -> str:
             lines += ["", f"### REAL_DEFECT 待提单（{len(real)} 条）", ""]
             lines += [f"- `{cid}`" for cid in real]
 
+    # Phase 14 - 韧性场景结果（chaos-report.json 存在才渲染）
+    chaos = _load(artifacts_dir / "chaos-report.json")
+    if chaos is not None:
+        cres = chaos.get("results") or []
+        if cres:
+            lines += ["", "### 韧性场景（Phase 14）", "",
+                      "| 场景 | 结果 | 耗时 |", "|---|---|---|"]
+            for r in cres:
+                mark = "✅ PASS" if r.get("passed") else "❌ FAIL"
+                lines.append(f"| {r.get('scenario')} | {mark} | {r.get('elapsed_s', '-')}s |")
+            for r in cres:
+                if not r.get("passed"):
+                    for n in (r.get("notes") or [])[-3:]:
+                        lines.append(f"- `{r.get('scenario')}`: {n}")
+
+    # Phase 15 - 性能基准（perf-report.json 存在才渲染）
+    perf = _load(artifacts_dir / "perf-report.json")
+    if perf is not None:
+        pres = perf.get("results") or []
+        if pres:
+            lines += ["", "### 性能基准（Phase 15）", "",
+                      "| 端点 | RPS | p50 | p95 | p99 | 错误率 |",
+                      "|---|---|---|---|---|---|"]
+            for r in pres:
+                lines.append(
+                    f"| {r.get('target')} | {r.get('rps')} | {r.get('p50_ms')}ms"
+                    f" | {r.get('p95_ms')}ms | {r.get('p99_ms')}ms"
+                    f" | {r.get('error_rate', 0):.1%} |"
+                )
+
     return "\n".join(lines) + "\n"
 
 
 def main() -> int:
+    # Windows 控制台默认 GBK，✅/❌ 等字符会导致 UnicodeEncodeError
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
     digest = build_digest(ROOT / "artifacts")
     dest = os.environ.get("GITHUB_STEP_SUMMARY")
     if dest:
