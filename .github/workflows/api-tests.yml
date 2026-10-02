@@ -161,6 +161,14 @@ jobs:
         working-directory: api-test-platform
         run: python -m analyzer.summary
 
+      # Phase 14 - 韧性场景（故障注入 + 并发竞态）：容器停机降级/支付幂等/库存超卖。
+      # 韧性发现先观察不阻断构建（continue-on-error），稳定后收紧为门禁
+      - name: Chaos & race scenarios (Phase 14)
+        if: success()
+        continue-on-error: true
+        working-directory: api-test-platform
+        run: python -m chaos.cli
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
