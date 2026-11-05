@@ -26,6 +26,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--provider", default=None, help="mock | openai | anthropic（默认取 .env）")
     p.add_argument("--service", default=None, help="只生成指定服务")
     p.add_argument("--limit", type=int, default=None, help="只取前 N 个接口")
+    p.add_argument(
+        "--requirements", default=None,
+        help="Phase 16 产物 requirements.json（可选：注入需求测试点提示 + 追溯）",
+    )
     args = p.parse_args(argv)
 
     settings = LLMSettings.from_env()
@@ -38,12 +42,15 @@ def main(argv: list[str] | None = None) -> int:
         settings=settings,
         only_service=args.service,
         limit=args.limit,
+        requirements_path=Path(args.requirements) if args.requirements else None,
     )
     s = case_set.stats
     print("[OK] 用例生成完成")
     print(f"  接口数: {s['endpoints']}  provider: {s['provider']}  model: {s['model']}")
     print(f"  规则用例: {s['rule_cases']}  AI用例: {s['ai_cases']}  (LLM 成功/失败接口: {s['ai_endpoints_ok']}/{s['ai_endpoints_failed']})")
     print(f"  分类分布: {s['by_category']}")
+    if s["req_points"]:
+        print(f"  需求测试点: 注入 {s['req_points']} 条提示, 带追溯用例 {s['trace_cases']} 条")
     print(f"  产物 -> {args.out}")
     return 0
 

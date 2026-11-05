@@ -54,8 +54,14 @@ RESPONSE_WRAPPER = {
 VALIDATION_ORDER_NOTE = "该系统请求体校验先于鉴权：无凭证 + 非法 body 会返回 400 而非 401。auth 类用例必须携带合法 body。"
 
 
-def build_user_prompt(endpoint: Endpoint, schemas: dict | None = None) -> str:
+def build_user_prompt(
+    endpoint: Endpoint,
+    schemas: dict | None = None,
+    req_points: list[dict] | None = None,
+) -> str:
+    """req_points：Phase 16 需求分析产出的 P0 测试点，作为覆盖提示（可选）。"""
     schemas = schemas or {}
+    req_points = req_points or []
     schema_ref = endpoint.request_body.schema_ref if endpoint.request_body else None
     req_schema = schemas.get(schema_ref.rsplit("/", 1)[-1]) if schema_ref else None
 
@@ -71,10 +77,24 @@ def build_user_prompt(endpoint: Endpoint, schemas: dict | None = None) -> str:
         "request_body_schema": req_schema,   # 真实字段定义，body 字段名必须从这里取
         "responses": [r.model_dump() for r in endpoint.responses],
     }
+    # 需求测试点作为覆盖提示（Phase 16）；有 tp_id 字段，无则 schema 保持原样
+    shape = dict(CASE_JSON_SHAPE)
+    req_block = ""
+    if req_points:
+        lines = "\n".join(
+            f"- {p.get('id')} [{p.get('kind', '-')}] {p.get('title', '')}" for p in req_points
+        )
+        shape["tp_id"] = "本条用例覆盖的需求测试点 id（与接口无关则填空串）"
+        req_block = (
+            "需求侧测试点（来自 PRD 分析，若与本接口相关请覆盖，并在 tp_id 回填对应 id）：\n"
+            f"{lines}\n\n"
+        )
+
     return (
         "为下面这个接口设计 3~6 个高价值测试用例（不要凑数，优先：业务边界、必填校验、"
         "鉴权/越权、资源不存在、幂等/重复提交冲突；正向用例 1 个即可）。\n\n"
         f"接口定义:\n{json.dumps(spec, ensure_ascii=False)}\n\n"
+        f"{req_block}"
         f"统一响应包装（所有接口返回它）:\n{json.dumps(RESPONSE_WRAPPER, ensure_ascii=False)}\n\n"
         "业务前提：\n"
         "- 这是按 ID 查询/操作的接口时，数据库是空的，除非用例自己先创建数据；"
@@ -82,7 +102,7 @@ def build_user_prompt(endpoint: Endpoint, schemas: dict | None = None) -> str:
         f"- {VALIDATION_ORDER_NOTE}\n"
         "- json_path_contains 只能引用统一响应包装里的字段路径（如 data.xxx、error.code）。\n\n"
         "输出 JSON 数组，每个元素结构如下（字段名必须完全一致）：\n"
-        f"{json.dumps(CASE_JSON_SHAPE, ensure_ascii=False)}\n\n"
+        f"{json.dumps(shape, ensure_ascii=False)}\n\n"
         "约束：\n"
         "- path_template/method 保持与输入一致，不改路径；\n"
         "- path_params/query_params 只使用输入里出现的参数名；\n"

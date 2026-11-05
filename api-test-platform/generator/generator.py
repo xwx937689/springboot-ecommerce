@@ -43,9 +43,36 @@ def load_endpoints(path: Path) -> tuple[list[Endpoint], dict[str, dict]]:
     return endpoints, schemas_by_service
 
 
-def _case_from_ai(endpoint: Endpoint, idx: int, raw: dict) -> TestCase:
+def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
+    """读 Phase 16 产物 requirements.json。
+
+    返回 (P0 测试点提示[最多 8 条], tp_id -> 追溯信息)。
+    只用优先级最高的几条做提示，避免长 PRD 把 prompt 撑爆。
+    """
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    hints: list[dict] = []
+    index: dict[str, dict] = {}
+    for tp in data.get("test_points", []):
+        tid = tp.get("id")
+        if not tid:
+            continue
+        index[tid] = {
+            "tp_id": tid,
+            "ac_id": tp.get("ac_id", ""),
+            "module_id": tp.get("module_id", ""),
+        }
+        if tp.get("priority") == "P0":
+            hints.append({"id": tid, "kind": tp.get("kind", ""), "title": tp.get("title", "")})
+    return hints[:8], index
+
+
+def _case_from_ai(
+    endpoint: Endpoint, idx: int, raw: dict, tp_index: dict[str, dict] | None = None
+) -> TestCase:
     req = raw.get("request", {})
     exp = raw.get("expected", {})
+    tp_id = str(raw.get("tp_id") or "").strip()
+    trace = (tp_index or {}).get(tp_id)     # 只认已加载的测试点 id，编造的丢弃
     return TestCase(
         id=f"{endpoint.service}__{endpoint.operation_id or 'op'}__ai-{idx:02d}",
         service=endpoint.service,
@@ -69,6 +96,7 @@ def _case_from_ai(endpoint: Endpoint, idx: int, raw: dict) -> TestCase:
         ),
         source=CaseSource.AI,
         tags=["ai"] + list(raw.get("tags", [])),
+        req_trace=trace,
     )
 
 
@@ -78,6 +106,7 @@ def generate(
     settings: LLMSettings | None = None,
     only_service: str | None = None,
     limit: int | None = None,
+    requirements_path: Path | None = None,
 ) -> TestCaseSet:
     settings = settings or LLMSettings.from_env()
     endpoints, schemas_by_service = load_endpoints(endpoints_path)
@@ -85,6 +114,12 @@ def generate(
         endpoints = [e for e in endpoints if e.service == only_service]
     if limit:
         endpoints = endpoints[:limit]
+
+    # 0) 可选：加载 Phase 16 需求测试点（用于提示 + 追溯）
+    req_hints: list[dict] = []
+    tp_index: dict[str, dict] = {}
+    if requirements_path is not None and requirements_path.exists():
+        req_hints, tp_index = _load_req_points(requirements_path)
 
     # 1) 规则基线（基于真实 schema 造数据）
     cases: list[TestCase] = []
@@ -100,7 +135,9 @@ def generate(
             try:
                 reply = client.complete(
                     prompts.SYSTEM_PROMPT,
-                    prompts.build_user_prompt(ep, schemas_by_service.get(ep.service, {})),
+                    prompts.build_user_prompt(
+                        ep, schemas_by_service.get(ep.service, {}), req_hints
+                    ),
                 )
                 raw_cases = extract_json_array(reply.text)
                 parsed: list[TestCase] = []
@@ -108,7 +145,7 @@ def generate(
                     try:
                         if raw.get("category") not in _CATEGORY_VALUES:
                             raise ValueError(f"非法 category: {raw.get('category')}")
-                        parsed.append(_case_from_ai(ep, i, raw))
+                        parsed.append(_case_from_ai(ep, i, raw, tp_index))
                     except (ValidationError, ValueError, TypeError, KeyError) as exc:
                         logger.warning("AI 用例校验失败，跳过: %s", exc)
                 cases.extend(parsed)
@@ -128,6 +165,8 @@ def generate(
         "ai_endpoints_ok": ai_stats["ok"],
         "ai_endpoints_failed": ai_stats["failed"],
         "by_category": _count_by_category(case_set.cases),
+        "req_points": len(req_hints),                        # Phase 16 提示条数
+        "trace_cases": sum(1 for c in case_set.cases if c.req_trace),
     }
 
     out_path.parent.mkdir(parents=True, exist_ok=True)

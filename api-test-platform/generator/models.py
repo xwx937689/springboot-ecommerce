@@ -54,6 +54,9 @@ class TestCase(BaseModel):
     expected: ExpectedResult
     source: CaseSource = CaseSource.RULE
     tags: list[str] = Field(default_factory=list)
+    # Phase 16 追溯：来源需求测试点 {tp_id, ac_id, module_id}；无关联时为 None。
+    # 只由生成侧写入（LLM 回填的 tp_id 必须命中已加载的测试点，否则丢弃）。
+    req_trace: dict | None = None
 
 
 class TestCaseSet(BaseModel):
