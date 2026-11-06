@@ -83,13 +83,26 @@ def analyze(
                 findings += extra
                 stats["llm_findings"] += len(extra)
                 stats["llm_modules_ok"] += 1
-            except (LLMError, json.JSONDecodeError, ValueError) as exc:
+            except (LLMError, json.JSONDecodeError, ValueError,
+                    AttributeError, TypeError) as exc:
+                # AttributeError/TypeError：LLM 返回元素不是 dict（["bad", null]），
+                # 不拦会崩整个任务而非只降级该模块
                 stats["llm_modules_failed"] += 1
                 print(f"[WARN] LLM 需求分析失败 {module.id}: {exc}")
 
     findings = _dedupe(findings)
     for i, f in enumerate(findings, 1):
         f.id = f"F-{i:03d}"                 # 统一重排，保证连续
+
+    # 填人可读的原文定位（人工审核从问题跳回 PRD 原文用）
+    mod_by_id = {m.id: m for m in flat}
+    for f in findings:
+        m = mod_by_id.get(f.module_id)
+        if m and m.line_end:
+            f.source_location = (
+                f"第 {m.line_start}-{m.line_end} 行"
+                if m.line_end != m.line_start else f"第 {m.line_start} 行"
+            )
 
     stats["findings"] = len(findings)
     stats["by_type"] = {t.value: sum(1 for f in findings if f.type == t) for t in FindingType}
@@ -215,6 +228,8 @@ def _by_llm(client, module: ReqModule) -> list[AmbiguityFinding]:
     reply = client.complete(_SYSTEM_PROMPT, _build_prompt(module))
     out: list[AmbiguityFinding] = []
     for raw in extract_json_array(reply.text):
+        if not isinstance(raw, dict):      # 垃圾条目（字符串/数字/null）直接跳过
+            continue
         ftype = str(raw.get("type", "")).strip().lower()
         evidence = str(raw.get("evidence", "")).strip()
         reason = str(raw.get("reason", "")).strip()

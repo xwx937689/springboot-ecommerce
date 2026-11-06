@@ -33,7 +33,14 @@ from generator.llm import LLMError, extract_json_array, make_client
 
 from . import lexicon
 from .extract import _walk
-from .models import AcceptanceCriterion, BusinessRule, ReqModule, TestPoint
+from .models import (
+    AcceptanceCriterion,
+    BusinessRule,
+    Priority,
+    ReqModule,
+    TestPoint,
+    TestPointKind,
+)
 
 _SYSTEM_PROMPT = (
     "你是资深测试设计师，基于给出的验收标准补充业务语义测试点"
@@ -97,7 +104,8 @@ def generate(
             try:
                 tps.extend(_enrich_by_llm(client, module, acs))
                 stats["llm_modules_ok"] += 1
-            except (LLMError, json.JSONDecodeError, ValueError) as exc:
+            except (LLMError, json.JSONDecodeError, ValueError,
+                    AttributeError, TypeError) as exc:
                 stats["llm_modules_failed"] += 1
                 print(f"[WARN] LLM 测试点增强失败 {module.id}: {exc}")
 
@@ -111,11 +119,13 @@ def generate(
 # ---------------------------------------------------------------- 规则引擎
 
 def _tps_from_ac(ac: AcceptanceCriterion, ref_rules: list[BusinessRule]) -> list[TestPoint]:
-    """一条可测 AC -> 正向 + 边界 + 负向测试点。"""
+    """一条可测 AC -> 正向 + 边界 + 负向测试点（全部带上 rule_ids 追溯）。"""
+    rule_ids = [r.id for r in ref_rules]
     out = [
         TestPoint(
             id="",
             ac_id=ac.id,
+            rule_ids=rule_ids,
             module_id=ac.module_id,
             title=f"正向：{ac.text[:40]}",
             kind="positive",
@@ -131,6 +141,7 @@ def _tps_from_ac(ac: AcceptanceCriterion, ref_rules: list[BusinessRule]) -> list
             TestPoint(
                 id="",
                 ac_id=ac.id,
+                rule_ids=rule_ids,
                 module_id=ac.module_id,
                 title=f"负向：以未授权/非法身份执行 —— {ac.text[:34]}",
                 kind="negative",
@@ -150,18 +161,18 @@ def _boundary_tps(rule: BusinessRule, ac: AcceptanceCriterion) -> list[TestPoint
     tps: list[TestPoint] = []
     if any(w in rule.text for w in lexicon.LOWER_BOUND):
         tps.append(TestPoint(
-            id="", ac_id=ac.id, module_id=ac.module_id,
+            id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
             title=f"边界：取 {n - 1}{unit}（低于下限 {n}）应被拒绝",
             kind="boundary", priority="P1", notes=f"依据 {rule.id}",
         ))
     elif any(w in rule.text for w in lexicon.UPPER_BOUND):
         tps.append(TestPoint(
-            id="", ac_id=ac.id, module_id=ac.module_id,
+            id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
             title=f"边界：取 {n}{unit}（恰好等于上限）应通过",
             kind="boundary", priority="P1", notes=f"依据 {rule.id}",
         ))
         tps.append(TestPoint(
-            id="", ac_id=ac.id, module_id=ac.module_id,
+            id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
             title=f"边界：取 {n + 1}{unit}（超过上限 {n}）应被拒绝",
             kind="boundary", priority="P1", notes=f"依据 {rule.id}",
         ))
@@ -169,11 +180,12 @@ def _boundary_tps(rule: BusinessRule, ac: AcceptanceCriterion) -> list[TestPoint
 
 
 def _tp_from_rule(rule: BusinessRule) -> TestPoint:
-    """没有 AC 覆盖的 BR 直接出测试点，追溯写在 notes。"""
-    kind = "negative" if rule.category == "permission" else "positive"
+    """没有 AC 覆盖的 BR 直接出测试点，用 rule_ids 建立数据级追溯。"""
+    kind: TestPointKind = "negative" if rule.category == "permission" else "positive"
     return TestPoint(
         id="",
-        ac_id="",                  # 该规则无 AC 覆盖，追溯止于 BR 层
+        ac_id="",                  # 该规则无 AC 覆盖
+        rule_ids=[rule.id],        # 追溯直达 BR 层，不再只靠 notes 字符串
         module_id=rule.module_id,
         title=f"{'负向' if kind == 'negative' else '正向'}：{rule.text[:40]}",
         kind=kind,
@@ -187,7 +199,7 @@ def _rule_id_of(tp: TestPoint) -> str:
     return m.group(1) if m else ""
 
 
-def _priority(text: str, rules: list[BusinessRule]) -> str:
+def _priority(text: str, rules: list[BusinessRule]) -> Priority:
     all_text = text + " " + " ".join(r.text for r in rules)
     return "P0" if any(w in all_text for w in _CORE_WORDS) else "P1"
 
@@ -199,22 +211,28 @@ def _enrich_by_llm(
 ) -> list[TestPoint]:
     reply = client.complete(_SYSTEM_PROMPT, _build_prompt(module, acs))
     raw_items = extract_json_array(reply.text)
-    valid_ac = {ac.id for ac in acs}          # 只允许引用本模块的 AC
+    ac_by_id = {ac.id: ac for ac in acs}      # 只允许引用本模块的 AC
     out: list[TestPoint] = []
     for raw in raw_items:
+        if not isinstance(raw, dict):      # 垃圾条目（字符串/数字/null）直接跳过
+            continue
         ac_id = str(raw.get("ac_id", "")).strip()
         title = str(raw.get("title", "")).strip()
         kind = str(raw.get("kind", "")).strip().lower()
-        if ac_id not in valid_ac or not title or kind not in _TP_KINDS:
+        if ac_id not in ac_by_id or not title or kind not in _TP_KINDS:
             continue                          # 追溯校验：引用不存在即丢弃
+        prio = str(raw.get("priority") or "P2").strip().upper()
+        if prio not in ("P0", "P1", "P2"):    # Literal 只认 P0~P2，非法降级不报废
+            prio = "P2"
         out.append(
             TestPoint(
                 id="",
                 ac_id=ac_id,
+                rule_ids=list(ac_by_id[ac_id].rule_ids),   # 继承 AC 的规则追溯
                 module_id=module.id,
                 title=title[:80],
-                kind=kind,
-                priority=str(raw.get("priority") or "P2"),
+                kind=kind,                    # type: ignore[arg-type]
+                priority=prio,                # type: ignore[arg-type]
                 notes=(str(raw.get("notes") or "")[:200] + "（来源：llm）").strip(),
             )
         )

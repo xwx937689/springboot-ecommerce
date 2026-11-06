@@ -29,8 +29,17 @@ SYSTEM_PROMPT = (
 )
 
 _ITEM_KIND = {"rule", "ac"}
+_RULE_CATEGORIES = {"constraint", "calculation", "workflow", "permission", "general"}
+_TESTABILITY_VALUES = {"testable", "partial", "untestable"}
 _LIST_BULLET = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 _SENTENCE_SEP = re.compile(r"[。；;]")
+_MIN_SEG = 4        # 陈述句最短长度：再短（"如下："）没有分析价值
+_ENUM_SEG = 8       # ；切出的碎片低于此长度视为列举，整行保留
+
+
+def _norm(s: str) -> str:
+    """去全部空白后比对：LLM 的 evidence 与原文只在空格/换行上有差异也能命中。"""
+    return re.sub(r"\s+", "", s)
 
 
 def extract(
@@ -59,13 +68,20 @@ def extract(
 
         used_llm = False
         if client is not None:
+            # 局部序号：LLM 中途失败时已推进的序号随局部结果一起丢弃，
+            # 全局序号不被污染（否则回退后 ID 断号）
+            local_br, local_ac = br_seq.copy(), ac_seq.copy()
             try:
-                r, a = _extract_by_llm(client, module, br_seq, ac_seq)
+                r, a = _extract_by_llm(client, module, local_br, local_ac)
                 rules.extend(r)
                 criteria.extend(a)
+                br_seq[0], ac_seq[0] = local_br[0], local_ac[0]   # 全模块成功才提交
                 stats["llm_modules_ok"] += 1
                 used_llm = True
-            except (LLMError, json.JSONDecodeError, ValueError) as exc:
+            except (LLMError, json.JSONDecodeError, ValueError,
+                    AttributeError, TypeError) as exc:
+                # AttributeError/TypeError：LLM 返回的元素不是 dict（["bad", null]）
+                # 这类垃圾若不拦会整个任务崩掉，而不只是回退
                 stats["llm_modules_failed"] += 1
                 print(f"[WARN] LLM 提取失败 {module.id}，回退规则引擎: {exc}")
 
@@ -78,7 +94,8 @@ def extract(
 
     stats["rules"] = len(rules)
     stats["criteria"] = len(criteria)
-    stats["untestable_criteria"] = sum(1 for c in criteria if not c.testable)
+    stats["untestable_criteria"] = sum(1 for c in criteria if c.testability == "untestable")
+    stats["partial_criteria"] = sum(1 for c in criteria if c.testability == "partial")
     return rules, criteria, stats
 
 
@@ -100,18 +117,26 @@ def extract_rule_based(
                 module_id=module.id,
                 text=text,
                 category=_classify_rule(text),
+                evidence=text,             # 规则引擎的 text 就是原文陈述，证据即自身
+                review_status="approved",  # 原文直取，无需人工复核
             )
             rules.append(rule)
 
         if _is_testable(text):
             ac_seq[0] += 1
+            status, reason, questions = _testability(text)
             criteria.append(
                 AcceptanceCriterion(
                     id=f"AC-{ac_seq[0]:03d}",
                     module_id=module.id,
                     rule_ids=[rule.id] if rule else [],
                     text=text,
-                    testable=not _is_vague(text),
+                    evidence=text,
+                    review_status="approved",
+                    testable=status == "testable",
+                    testability=status,
+                    testability_reason=reason,
+                    clarification_questions=questions,
                 )
             )
     return rules, criteria
@@ -129,16 +154,23 @@ def _walk(modules: list[ReqModule]) -> list[ReqModule]:
 
 
 def _split_statements(content: str) -> list[str]:
-    """正文 -> 陈述句列表：去列表符号，按中英文句号/分号切。"""
+    """正文 -> 陈述句列表：去列表符号，按中英文句号/分号切。
+
+    两个语义保护：
+      - ；切出的碎片过短（<8 字）说明是列举（"状态包括：待支付；已支付；已取消"），
+        整行保留为一条，避免后几个枚举值失去上下文；
+      - 最短阈值 4 字而非 6："仅限 VIP""不可重复" 这类短句可能是关键约束。
+    """
     out: list[str] = []
     for line in content.splitlines():
         line = _LIST_BULLET.sub("", line.strip())
         if not line:
             continue
-        for seg in _SENTENCE_SEP.split(line):
-            seg = seg.strip()
-            if len(seg) >= 6:      # 太短的片段（"如下："）没有分析价值
-                out.append(seg)
+        parts = [p.strip() for p in _SENTENCE_SEP.split(line) if p.strip()]
+        if len(parts) > 1 and any(len(p) < _ENUM_SEG for p in parts):
+            out.append(line.rstrip("。"))     # 列举句：保上下文，不切
+        else:
+            out.extend(p for p in parts if len(p) >= _MIN_SEG)
     return out
 
 
@@ -153,6 +185,31 @@ def _is_testable(text: str) -> bool:
 
 def _is_vague(text: str) -> bool:
     return any(w in text for w in lexicon.VAGUE)
+
+
+def _testability(text: str) -> tuple[str, str, list[str]]:
+    """三态可测性判定：可测 / 部分可测 / 不可测。
+
+    区分依据：
+      - 含 TBD 词（待定/暂定）：连取值都没有 -> untestable；
+      - 含其他模糊词（尽快/大约）：有可验证部分但缺量化标准 -> partial；
+      - 都没有 -> testable。
+    """
+    tbd = [w for w in lexicon.TBD if w in text]
+    if tbd:
+        return (
+            "untestable",
+            f"存在未确定项「{'、'.join(tbd)}」，取值未定无法判定",
+            [f"请明确「{w}」的具体取值" for w in tbd],
+        )
+    vague = [w for w in lexicon.VAGUE if w in text]
+    if vague:
+        return (
+            "partial",
+            f"含模糊表述「{'、'.join(vague)}」，缺少量化标准",
+            [f"请明确「{w}」的量化标准（如具体数值/时间）" for w in vague],
+        )
+    return "testable", "", []
 
 
 def _classify_rule(text: str) -> str:
@@ -178,39 +235,76 @@ def _extract_by_llm(
 
     rules: list[BusinessRule] = []
     criteria: list[AcceptanceCriterion] = []
-    text_to_rule_id: dict[str, str] = {}
+    ref_to_id: dict[str, str] = {}        # LLM 模块内临时 ref（R1...）-> 正式 BR ID
+    text_to_rule_id: dict[str, str] = {}  # 兼容兜底：按原文精确匹配（ref 缺失时）
+    dropped = 0
 
     for raw in raw_items:
+        if not isinstance(raw, dict):     # ["invalid", null, 123] 这类垃圾条目
+            dropped += 1
+            continue
         kind = str(raw.get("kind", "")).strip().lower()
         text = str(raw.get("text", "")).strip()
+        evidence = str(raw.get("evidence", "")).strip()
         if kind not in _ITEM_KIND or not text:
-            continue                       # schema 校验：不合法直接丢，不猜
+            dropped += 1
+            continue
+        # 幻觉防线：evidence 必须真的出自本模块正文（去空白比对）。
+        # 程序只能验证"原文存在"，验证不了"语义没被放大"——后者靠 review_status=pending 走人工
+        if not evidence or _norm(evidence) not in _norm(module.content):
+            dropped += 1
+            continue
+
         if kind == "rule":
+            ref = str(raw.get("ref") or "").strip()
+            if ref and ref in ref_to_id:  # ref 重复：无效条目
+                dropped += 1
+                continue
             br_seq[0] += 1
             rid = f"BR-{br_seq[0]:03d}"
+            if ref:
+                ref_to_id[ref] = rid
             text_to_rule_id[text] = rid
+            # LLM 给了不认识的分类 -> 降级 general，不整模块报废
+            category = str(raw.get("category") or "general").strip().lower()
+            if category not in _RULE_CATEGORIES:
+                category = "general"
             rules.append(
                 BusinessRule(
                     id=rid,
                     module_id=module.id,
                     text=text[:300],
-                    category=str(raw.get("category") or "general"),
+                    category=category,          # type: ignore[arg-type]
+                    evidence=evidence[:300],
+                    review_status="pending",    # LLM 产出必须过人工复核
                 )
             )
         else:
             ac_seq[0] += 1
             derived = str(raw.get("derived_from") or "").strip()
+            # 优先 ref（LLM 改写文字也不影响关联），退回原文精确匹配
+            rid = ref_to_id.get(derived) or text_to_rule_id.get(derived) or ""
+            # LLM 可直接给三态；只给旧布尔时按 testable 映射
+            status = str(raw.get("testability") or "").strip().lower()
+            if status not in _TESTABILITY_VALUES:
+                status = "testable" if bool(raw.get("testable", True)) else "untestable"
             criteria.append(
                 AcceptanceCriterion(
                     id=f"AC-{ac_seq[0]:03d}",
                     module_id=module.id,
-                    rule_ids=[text_to_rule_id[derived]] if derived in text_to_rule_id else [],
+                    rule_ids=[rid] if rid else [],
                     text=text[:300],
-                    testable=bool(raw.get("testable", True)),
+                    evidence=evidence[:300],
+                    review_status="pending",
+                    testable=status == "testable",
+                    testability=status,         # type: ignore[arg-type]
+                    testability_reason=str(raw.get("testability_reason") or "").strip()[:200],
                 )
             )
     if not rules and not criteria:
         raise ValueError("LLM 未产出任何合法条目")
+    if dropped:
+        print(f"[WARN] LLM 条目 {module.id}: 丢弃 {dropped} 条（无原文证据/结构非法）")
     return rules, criteria
 
 
@@ -221,17 +315,25 @@ def _build_prompt(module: ReqModule) -> str:
         "请拆解成条目，逐条输出。要求：\n"
         "- kind=rule：系统必须满足的约束，category 取 constraint|permission|workflow|general；\n"
         "- kind=ac：可直接判定通过/失败的可验证陈述，必须能对应到具体行为或数值；\n"
-        "- ac 条目若由某条 rule 推导而来，用 derived_from 填该 rule 的 text 原文，否则填空串；\n"
-        "- testable：陈述含模糊词（尽快/大约/合理/高可用等）时为 false；\n"
+        "- rule 条目用 ref 起模块内临时编号（R1、R2...），供 ac 条目引用；\n"
+        "- evidence：必须填【正文中真实存在】的原文片段（该条目所依据的句子），"
+        "程序会校验它确实出现在正文里，找不到的条目会被整条丢弃；\n"
+        "- ac 条目若由某条 rule 推导而来，用 derived_from 填该 rule 的 ref（如 R1），否则填空串；\n"
+        "- testability：testable(可直接判定)|partial(部分可验证但含模糊表述)|untestable(取值未定无法判定)，"
+        "含模糊词（尽快/大约/合理/高可用）至少是 partial，含「待定」是 untestable；\n"
+        "- testability_reason：testability 不是 testable 时，一句话说明原因；\n"
         "- 不要合并无关句子，不要编造正文里没有的内容。\n\n"
         "输出 JSON 数组，元素结构：\n"
         + json.dumps(
             {
                 "kind": "rule|ac",
+                "ref": "R1（仅 rule 填）",
                 "text": "条目原文或规范化后的陈述",
-                "category": "constraint|permission|workflow|general",
-                "derived_from": "对应 rule 的 text，或空串",
-                "testable": True,
+                "evidence": "正文中该条目所依据的原文片段",
+                "category": "constraint|calculation|permission|workflow|general",
+                "derived_from": "对应 rule 的 ref，或空串",
+                "testability": "testable|partial|untestable",
+                "testability_reason": "非 testable 时的一句话原因",
             },
             ensure_ascii=False,
         )

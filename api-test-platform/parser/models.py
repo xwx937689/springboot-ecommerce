@@ -1,6 +1,7 @@
 
 """Phase 4 - 统一接口数据模型（与具体 OpenAPI 版本解耦）。
 
+
 后面 Phase 5/6/7 全部基于这些模型工作，不依赖原始 JSON 结构。
 """
 from __future__ import annotations

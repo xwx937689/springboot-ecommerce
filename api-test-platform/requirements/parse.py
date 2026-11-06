@@ -15,7 +15,8 @@
   且不需要预先知道文档有几级标题（比 WHartTest 的"按 split_level 切块"更简单）。
 
 已知不支持（有意为之，PRD 里极少见）：
-  - setext 标题（=== / --- 下划线式）；
+  - setext 标题（=== / --- 下划线式）：按正文处理，但会通过 warnings 主动提示，
+    避免用户以为所有 markdown 标题都能解析；
   - 未闭合的围栏：余下全文按代码处理，不报错（宁可少解析，不可拆错树）。
 """
 from __future__ import annotations
@@ -28,29 +29,60 @@ from .models import ReqModule
 # 匹配 markdown 标题：最多 3 个前导空格 + 1~6 个 # + 至少一个空格，末尾 # 可有可无
 _HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$")
 
+# setext 标题的下划线：整行只有 = 或 -（前面紧贴非空行才成立，单独的 --- 是分隔线）
+_SETEXT = re.compile(r"^ {0,3}(=+|-+)\s*$")
+
 # 代码围栏：最多 3 个前导空格 + 3 个以上反引号或波浪号
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 def parse_markdown(path: Path) -> list[ReqModule]:
-    """把 markdown 文件解析成模块树，返回根节点列表。"""
-    text = path.read_text(encoding="utf-8-sig")   # utf-8-sig 兼容带 BOM 的文件
+    """把 markdown 文件解析成模块树，返回根节点列表。
+
+    读文件的异常（不存在/无权限/编码不对）故意不在这里吞掉——由 CLI 统一
+    转成人能看懂的提示。解析层只负责结构转换，职责单一。
+    """
+    return parse_text(path.read_text(encoding="utf-8-sig"))   # utf-8-sig 兼容带 BOM
+
+
+def parse_text(
+    text: str, warnings: list[str] | None = None
+) -> list[ReqModule]:
+    """解析已在内存中的 markdown 文本（CLI 先做文件校验，再调这里）。
+
+    warnings：可选列表，传入则收集非致命问题（如疑似 setext 标题），
+    不影响解析结果本身——调用方自行决定打印还是忽略。
+    """
+    warnings = warnings if warnings is not None else []
     roots: list[ReqModule] = []
     seq = 0                                        # 模块序号 -> M001, M002 ...
 
-    def new_module(title: str, level: int) -> ReqModule:
+    def new_module(title: str, level: int, line_no: int) -> ReqModule:
         nonlocal seq
         seq += 1
-        return ReqModule(id=f"M{seq:03d}", title=title, level=level)
+        # line_start 即标题行号；line_end 关断时机见弹栈/收尾逻辑
+        return ReqModule(id=f"M{seq:03d}", title=title, level=level, line_start=line_no)
 
     # 虚拟前言节点：保证"首个标题前就有正文"的情况不丢内容
-    preface = new_module("(前言)", 0)
+    preface = new_module("(前言)", 0, 1)
     stack: list[ReqModule] = [preface]   # 栈底永远是 preface，栈顶是最深模块
 
     in_fence = False          # 是否正处于代码围栏内
     fence_marker = ""         # 开启围栏的标记，如 "```" / "~~~~"
+    prev_line = ""            # 上一行原文（setext 判定用：下划线必须紧贴非空行）
+    prev_line_no = 0          # 上一行行号（模块关断时记 line_end 用）
 
-    for raw_line in text.splitlines():
+    for line_no, raw_line in enumerate(text.splitlines(), 1):
+        # setext 探测：=== / --- 紧贴在非标题正文下面，多半是用户想写标题
+        if not in_fence and _SETEXT.match(raw_line) and prev_line.strip() \
+                and not _HEADING.match(prev_line):
+            warnings.append(
+                f"第 {line_no} 行疑似 Setext 标题（「{prev_line.strip()[:20]}」下有"
+                f"{'=' if raw_line.lstrip().startswith('=') else '-'} 下划线），"
+                "本解析器只支持 # 标题，已按正文处理"
+            )
+        prev_line = raw_line
+
         fence = _FENCE.match(raw_line)
         if in_fence:
             # 闭合条件：同种字符 + 长度不短于开启标记（``` 闭不上 ~~~）
@@ -70,10 +102,15 @@ def parse_markdown(path: Path) -> list[ReqModule]:
         if m:
             level = len(m.group(1))
             title = m.group(2).strip()
-            # 弹栈：把所有"级别 >= 当前级别"的模块关掉（它们是当前标题的平级或子级）
+            # 前言永远在栈底不会被弹栈，其正文止于首个标题的前一行
+            if preface.content.strip() and preface.line_end == 0:
+                preface.line_end = prev_line_no
+            # 弹栈：把所有"级别 >= 当前级别"的模块关掉（它们是当前标题的平级或子级）。
+            # line_end 记到上一行——它们的正文在当前标题出现前就结束了
             while len(stack) > 1 and stack[-1].level >= level:
-                stack.pop()
-            node = new_module(title, level)
+                closed = stack.pop()
+                closed.line_end = prev_line_no
+            node = new_module(title, level, line_no)
             if stack[-1].level == 0:
                 roots.append(node)        # 挂在根上（h1 或孤儿 h2）
             else:
@@ -82,6 +119,10 @@ def parse_markdown(path: Path) -> list[ReqModule]:
         else:
             # 正文行：追加到当前最深模块
             stack[-1].content += raw_line + "\n"
+        prev_line_no = line_no
+
+    # 收尾：还没关断的模块（最后一批 + 未弹出的祖先 + 前言）补 line_end
+    _close_open(result := roots + ([preface] if preface.content.strip() else []), prev_line_no)
 
     # 清理：去掉空白的 content；若前言没内容则丢弃
     _strip_content(roots)
@@ -106,6 +147,14 @@ def _renumber(modules: list[ReqModule], counter: list[int] | None = None) -> Non
         counter[0] += 1
         m.id = f"M{counter[0]:03d}"
         _renumber(m.children, counter)
+
+
+def _close_open(modules: list[ReqModule], end_line: int) -> None:
+    """给到文档末尾仍未关断的模块补 line_end（递归下探子树）。"""
+    for m in modules:
+        if m.line_end == 0:
+            m.line_end = end_line
+        _close_open(m.children, end_line)
 
 
 def print_tree(modules: list[ReqModule], indent: str = "") -> None:
