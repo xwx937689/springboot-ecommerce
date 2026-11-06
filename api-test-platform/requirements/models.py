@@ -39,8 +39,11 @@ class ReqModule(BaseModel):
     id: str                            # M001, M002 ...（按文档出现顺序）
     title: str                         # 标题文本
     level: int                         # 标题级别：# 为 1，## 为 2 ...（前言为 0）
-    content: str = ""                  # 该标题下、下一级标题之前的正文
+    content: str = ""                  # 该标题下、下一级标题之前的正文（不含代码块）
     children: list["ReqModule"] = Field(default_factory=list)
+    # 该模块下出现的代码围栏段数：代码示例不是需求正文，不参与提取，
+    # 但要留个计数，避免"文档里有内容却消失了"的困惑
+    code_blocks: int = 0
 
 
 class BusinessRule(BaseModel):

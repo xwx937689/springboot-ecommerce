@@ -2,14 +2,21 @@
 
 算法（栈式一遍扫描，纯规则，无 LLM，离线可复现）：
   1. 逐行读文件；
-  2. 遇到标题行（# ~ ######）：按级别弹栈，直到栈顶级别 < 当前级别，
+  2. 进入代码围栏（``` 或 ~~~）后，直到闭合前【不识别标题】、内容也不进正文，
+     只在所属模块上累加 code_blocks 计数
+     （否则示例里的 "# 请求参数" 会被当成真实章节，把模块树拆歪）；
+  3. 遇到标题行（# ~ ######）：按级别弹栈，直到栈顶级别 < 当前级别，
      然后挂到栈顶模块（或根列表）的 children 上；
-  3. 遇到正文行：追加到栈顶模块的 content；
-  4. 首个标题之前的内容归入虚拟模块 "(前言)"（level=0），空则丢弃。
+  4. 遇到正文行：追加到栈顶模块的 content；
+  5. 首个标题之前的内容归入虚拟模块 "(前言)"（level=0），空则丢弃。
 
 为什么用"栈"而不是递归/两次遍历：
   标题天然是"任意深度、按出现顺序"的嵌套结构，栈能在 O(n) 内一遍建完树，
   且不需要预先知道文档有几级标题（比 WHartTest 的"按 split_level 切块"更简单）。
+
+已知不支持（有意为之，PRD 里极少见）：
+  - setext 标题（=== / --- 下划线式）；
+  - 未闭合的围栏：余下全文按代码处理，不报错（宁可少解析，不可拆错树）。
 """
 from __future__ import annotations
 
@@ -18,8 +25,11 @@ from pathlib import Path
 
 from .models import ReqModule
 
-# 匹配 markdown 标题：1~6 个 #，后面至少一个空格，末尾的 # 可有可无
-_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+# 匹配 markdown 标题：最多 3 个前导空格 + 1~6 个 # + 至少一个空格，末尾 # 可有可无
+_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$")
+
+# 代码围栏：最多 3 个前导空格 + 3 个以上反引号或波浪号
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 def parse_markdown(path: Path) -> list[ReqModule]:
@@ -37,7 +47,25 @@ def parse_markdown(path: Path) -> list[ReqModule]:
     preface = new_module("(前言)", 0)
     stack: list[ReqModule] = [preface]   # 栈底永远是 preface，栈顶是最深模块
 
+    in_fence = False          # 是否正处于代码围栏内
+    fence_marker = ""         # 开启围栏的标记，如 "```" / "~~~~"
+
     for raw_line in text.splitlines():
+        fence = _FENCE.match(raw_line)
+        if in_fence:
+            # 闭合条件：同种字符 + 长度不短于开启标记（``` 闭不上 ~~~）
+            if fence and fence.group(1)[0] == fence_marker[0] \
+                    and len(fence.group(1)) >= len(fence_marker):
+                in_fence = False
+                fence_marker = ""
+            continue                     # 围栏内既不当标题，也不进正文
+
+        if fence:
+            in_fence = True
+            fence_marker = fence.group(1)
+            stack[-1].code_blocks += 1   # 记一笔，便于人工核对"内容去哪了"
+            continue
+
         m = _HEADING.match(raw_line)
         if m:
             level = len(m.group(1))
@@ -84,5 +112,6 @@ def print_tree(modules: list[ReqModule], indent: str = "") -> None:
     """调试辅助：把模块树打印成人能看的样子。"""
     for m in modules:
         bar = "#" * m.level if m.level else "(root)"
-        print(f"{indent}{m.id} {bar} {m.title}  [{len(m.content)} 字]")
+        code = f" 代码块×{m.code_blocks}" if m.code_blocks else ""
+        print(f"{indent}{m.id} {bar} {m.title}  [{len(m.content)} 字{code}]")
         print_tree(m.children, indent + "    ")
