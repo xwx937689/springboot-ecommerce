@@ -65,10 +65,11 @@ def run(contracts_dir: Path, out: Path) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Phase 4 OpenAPI Parser")
-    ap.add_argument("--contracts", default="../openapi-contracts", type=Path)
-    ap.add_argument("--out", default="artifacts", type=Path)
+    # --contracts：告诉程序，接下来传入的是契约目录。../openapi-contracts：真正传入的目录路径。
+    ap.add_argument("--dir", default="../openapi-contracts", type=Path)
+    ap.add_argument("--outdir", default="artifacts", type=Path)
     args = ap.parse_args()
-    return run(args.contracts, args.out)
+    return run(args.dir, args.outdir)
 
 
 if __name__ == "__main__":
