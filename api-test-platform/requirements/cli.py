@@ -11,6 +11,7 @@
   2 文件不存在或路径是目录
   3 文件不可读（权限/IO 错误）
   4 编码不是 UTF-8
+  5 文档格式不受支持（.docx 之外的扩展名）
 """
 from __future__ import annotations
 
@@ -34,22 +35,8 @@ from .models import (
 )
 from .parse import parse_text
 from .testpoints import generate
-
-# 退出码常量：调用方（CI/脚本）按数字判断，不用猜
-EXIT_OK = 0
-EXIT_EMPTY = 1
-EXIT_MISSING = 2
-EXIT_UNREADABLE = 3
-EXIT_ENCODING = 4
-
-
-class _InputError(Exception):
-    """输入文件问题，带退出码；由 run() 统一打印成人能懂的提示。"""
-
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-
+from .ingest import load_document
+from .errors import EXIT_EMPTY, EXIT_ENCODING, EXIT_MISSING, EXIT_OK, EXIT_UNREADABLE, InputError
 
 def main(argv: list[str] | None = None) -> int:
     # Windows 控制台默认 GBK，中文输出会乱码/报错（与 analyzer/summary.py 同一处理）
@@ -75,7 +62,7 @@ def run(prd: Path, out: Path, settings: LLMSettings) -> int:
     # 1) 读文件：不存在/目录/权限/编码/空文件 全部在这里收敛
     try:
         text = _load_text(prd)
-    except _InputError as exc:
+    except InputError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return exc.code
 
@@ -160,22 +147,22 @@ def _load_text(path: Path) -> str:
       - 内容是空白（只有空格/换行）
     """
     if not path.exists():
-        raise _InputError(EXIT_MISSING, f"需求文档不存在: {path}")
+        raise InputError(EXIT_MISSING, f"需求文档不存在: {path}")
     if path.is_dir():
-        raise _InputError(EXIT_MISSING, f"这是目录不是文件: {path}")
+        raise InputError(EXIT_MISSING, f"这是目录不是文件: {path}")
     try:
         text = path.read_text(encoding="utf-8-sig")
     except PermissionError:
-        raise _InputError(EXIT_UNREADABLE, f"文件不可读（权限不足）: {path}") from None
+        raise InputError(EXIT_UNREADABLE, f"文件不可读（权限不足）: {path}") from None
     except UnicodeDecodeError:
-        raise _InputError(
+        raise InputError(
             EXIT_ENCODING,
             f"文件编码不是 UTF-8，无法解析: {path}（用记事本/VS Code 另存为 UTF-8 再试）",
         ) from None
     except OSError as exc:
-        raise _InputError(EXIT_UNREADABLE, f"读取失败: {path}（{exc}）") from None
+        raise InputError(EXIT_UNREADABLE, f"读取失败: {path}（{exc}）") from None
     if not text.strip():
-        raise _InputError(EXIT_EMPTY, f"文件内容为空: {path}")
+        raise InputError(EXIT_EMPTY, f"文件内容为空: {path}")
     return text
 
 

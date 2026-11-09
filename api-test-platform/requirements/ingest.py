@@ -1,16 +1,16 @@
 import zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from requirements.cli import _InputError
+from .errors import EXIT_FORMAT, EXIT_MISSING, InputError;
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 def load_document(path:Path) ->str:
     if not path.exists():
-        raise _InputError(2,f"文件不存在:{path}")
+        EXIT_MISSING
     # 检查文件格式是否为docx
     if path.suffix.lower() != ".docx":
-        raise _InputError(1,f"不支持的格式:{path.suffix}")
+        EXIT_FORMAT
     return _docx_to_markdown(path)
 
 def _docx_to_markdown(path):
@@ -32,3 +32,9 @@ def _docx_to_markdown(path):
                 if i == 0:
                     lines.append("| " + " | ".join(["---"]*len(cells)) + " |")
     return "\n".join(lines)
+def _para_style(elem):
+    pPr = elem.find(f"{W}pPr")
+    if pPr is None:
+        return None
+    return pPr.find(f"{W}pStyle").get("w:val")
+
