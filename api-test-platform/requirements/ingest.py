@@ -22,7 +22,7 @@ def _docx_to_markdown(path):
         if elem.tag == f"{W}p":                # 段落
             text = "".join(t.text or "" for t in elem.iter(f"{W}t")).strip()
             style = _para_style(elem)          # 读 pPr/pStyle/@w:val
-            prefix = {"Heading1":"# ", "Heading2":"## ", "Heading3":"### "}.get(style, "")
+            prefix = ("#" * style + "") if style else ""
             if text:
                 lines.append(prefix + text)
         elif elem.tag == f"{W}tbl":            # 表格
@@ -32,9 +32,28 @@ def _docx_to_markdown(path):
                 if i == 0:
                     lines.append("| " + " | ".join(["---"]*len(cells)) + " |")
     return "\n".join(lines)
+def _cell_text(tc):
+    # 单元格 <w:tc> 内含若干 <w:p>，逐段取 <w:t> 文字拼接
+    return "".join(
+
+        "".join(t.text or "" for t in p.iter(f"{W}t"))
+        for p in tc.iter(f"{W}p")).strip()
+_STYLE_LEVEL = {
+    "1": 1,
+    "2": 2,
+    "3": 3,
+}
 def _para_style(elem):
-    pPr = elem.find(f"{W}pPr")
+    pPr = elem.find(W+"pPr")
     if pPr is None:
         return None
-    return pPr.find(f"{W}pStyle").get("w:val")
+    # ② 有 pPr 但可能没 pStyle
+    pStyle = pPr.find(W + "pStyle")
+    if pStyle is None:
+        return None
+    #③ 属性带命名空间，去掉空格
+    style_id = pStyle.get(W + "val")
+    # ④ 查不到 → None
+    return _STYLE_LEVEL.get(style_id)
+
 

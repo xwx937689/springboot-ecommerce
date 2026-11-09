@@ -150,6 +150,9 @@ def _load_text(path: Path) -> str:
         raise InputError(EXIT_MISSING, f"需求文档不存在: {path}")
     if path.is_dir():
         raise InputError(EXIT_MISSING, f"这是目录不是文件: {path}")
+    if path.suffix.lower() == ".docx":
+        # docx走ingest
+        return load_document(path)
     try:
         text = path.read_text(encoding="utf-8-sig")
     except PermissionError:
@@ -162,9 +165,8 @@ def _load_text(path: Path) -> str:
     except OSError as exc:
         raise InputError(EXIT_UNREADABLE, f"读取失败: {path}（{exc}）") from None
     if not text.strip():
-        raise InputError(EXIT_EMPTY, f"文件内容为空: {path}")
+        raise InputError(EXIT_EMPTY, f"需求文档内容为空: {path}")
     return text
-
 
 def _metrics(
     criteria, findings, test_points, analyze_stats: dict, tp_stats: dict
