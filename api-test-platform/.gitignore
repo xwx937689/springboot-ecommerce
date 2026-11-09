@@ -11,3 +11,4 @@ __pycache__/
 # 执行产物（本地生成，不入库；基线分析目录除外）
 artifacts/*
 !artifacts/baseline-*/
+/requirements/samples/真实需求文档.docx
