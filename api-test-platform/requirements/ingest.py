@@ -21,7 +21,7 @@ def _docx_to_markdown(path):
       _walk(body,lines)
     return "\n".join(lines)
 def _walk(container,lines):
-    for elem in container.iter():                          # 只遍历直接子元素
+    for elem in container:                # 只遍历直接子元素
         if elem.tag == f"{W}p":                # 段落
             text = "".join(t.text or "" for t in elem.iter(f"{W}t")).strip()
             style = _para_style(elem)          # 读 pPr/pStyle/@w:val
@@ -36,6 +36,20 @@ def _walk(container,lines):
                     lines.append("| " + " | ".join(["---"]*len(cells)) + " |")
         elif elem.tag == f"{W}sdt":           #加 w:sdt 分支：封面/目录丢、其他递归 sdtContent。
             _walk(elem.find(f"{W}sdtContent"),lines)
+            val =None
+            sdt_pr = elem.find(f"{W}sdtPr")
+            if sdt_pr is not None:
+               obj = sdt_pr.find(f"{W}docPartObj")
+               if obj is not None:
+                    gal = obj.find(f"{W}docPartGallery")
+                    if gal is not None:
+                        val = gal.get(f"{W}val")
+            if val in {"Cover Pages","Table of Contents"}:
+                continue          #封面/目录: 整块跳过
+            content = elem.find(f"{W}sdtContent")
+            if content is not None:    #sdtContent 可能不存在，判空防空崩
+                _walk(content,lines)
+
 def _cell_text(tc):
     # 单元格 <w:tc> 内含若干 <w:p>，逐段取 <w:t> 文字拼接
     return "".join(
