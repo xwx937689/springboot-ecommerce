@@ -1,16 +1,16 @@
 import zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from .errors import EXIT_FORMAT, EXIT_MISSING, InputError;
+from .errors import EXIT_FORMAT, EXIT_MISSING, InputError
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 def load_document(path:Path) ->str:
     if not path.exists():
-        EXIT_MISSING
+        raise InputError(EXIT_MISSING, f"文件不存在: {path}")
     # 检查文件格式是否为docx
     if path.suffix.lower() != ".docx":
-        EXIT_FORMAT
+        raise InputError(EXIT_FORMAT, f"文件格式不支持: {path.suffix}")
     return _docx_to_markdown(path)
 
 def _docx_to_markdown(path):
@@ -22,7 +22,7 @@ def _docx_to_markdown(path):
         if elem.tag == f"{W}p":                # 段落
             text = "".join(t.text or "" for t in elem.iter(f"{W}t")).strip()
             style = _para_style(elem)          # 读 pPr/pStyle/@w:val
-            prefix = ("#" * style + "") if style else ""
+            prefix = ("#" * style + " ") if style else ""
             if text:
                 lines.append(prefix + text)
         elif elem.tag == f"{W}tbl":            # 表格
@@ -35,7 +35,6 @@ def _docx_to_markdown(path):
 def _cell_text(tc):
     # 单元格 <w:tc> 内含若干 <w:p>，逐段取 <w:t> 文字拼接
     return "".join(
-
         "".join(t.text or "" for t in p.iter(f"{W}t"))
         for p in tc.iter(f"{W}p")).strip()
 _STYLE_LEVEL = {
