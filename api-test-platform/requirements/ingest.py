@@ -15,10 +15,13 @@ def load_document(path:Path) ->str:
 
 def _docx_to_markdown(path):
     with zipfile.ZipFile(path) as zf:
-        root = ET.parse(zf.open("word/document.xml")).getroot()
-    body = root.find(f"{W}body")
-    lines = []
-    for elem in body:                          # 只遍历直接子元素
+      root = ET.parse(zf.open("word/document.xml")).getroot()
+      body = root.find(f"{W}body")
+      lines = []
+      _walk(body,lines)
+    return "\n".join(lines)
+def _walk(container,lines):
+    for elem in container.iter():                          # 只遍历直接子元素
         if elem.tag == f"{W}p":                # 段落
             text = "".join(t.text or "" for t in elem.iter(f"{W}t")).strip()
             style = _para_style(elem)          # 读 pPr/pStyle/@w:val
@@ -31,7 +34,8 @@ def _docx_to_markdown(path):
                 lines.append("| " + " | ".join(cells) + " |")
                 if i == 0:
                     lines.append("| " + " | ".join(["---"]*len(cells)) + " |")
-    return "\n".join(lines)
+        elif elem.tag == f"{W}sdt":           #加 w:sdt 分支：封面/目录丢、其他递归 sdtContent。
+            _walk(elem.find(f"{W}sdtContent"),lines)
 def _cell_text(tc):
     # 单元格 <w:tc> 内含若干 <w:p>，逐段取 <w:t> 文字拼接
     return "".join(
