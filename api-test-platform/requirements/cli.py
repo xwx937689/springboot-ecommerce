@@ -90,7 +90,7 @@ def run(prd: Path, out: Path, settings: LLMSettings) -> int:
     # 5) 指标 + 落盘（stats 用固定结构的 AnalysisStats，报表/CI 不依赖自由 dict）
     metrics = _metrics(criteria, findings, test_points, analyze_stats, tp_stats)
     analysis = RequirementAnalysis(
-        schema_version="1.0",
+        schema_version="1.1",
         source_file=str(prd),
         source_name=prd.name,
         source_path=_relative(prd),

@@ -142,6 +142,9 @@ class TestPoint(BaseModel):
     kind: TestPointKind = "positive"
     priority: Priority = "P1"
     notes: str = ""
+    preconditions: str = "" #前置条件
+    steps: list[str] = Field(default_factory=list) # 测试步骤
+    expected_results: str = ""
 
 
 class AnalysisMetrics(BaseModel):

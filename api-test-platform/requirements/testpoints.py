@@ -130,6 +130,9 @@ def _tps_from_ac(ac: AcceptanceCriterion, ref_rules: list[BusinessRule]) -> list
             title=f"正向：{ac.text[:40]}",
             kind="positive",
             priority=_priority(ac.text, ref_rules),
+            preconditions="",
+            steps=[],
+            expected_results=ac.text,
         )
     ]
     for r in ref_rules:
@@ -146,6 +149,9 @@ def _tps_from_ac(ac: AcceptanceCriterion, ref_rules: list[BusinessRule]) -> list
                 title=f"负向：以未授权/非法身份执行 —— {ac.text[:34]}",
                 kind="negative",
                 priority="P0",
+                preconditions="以未授权身份请求",
+                steps=["发起该请求"],
+                expected_results="请求被系统拒绝",
                 notes="依据权限类规则，验证系统拒绝",
             )
         )
@@ -164,17 +170,26 @@ def _boundary_tps(rule: BusinessRule, ac: AcceptanceCriterion) -> list[TestPoint
             id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
             title=f"边界：取 {n - 1}{unit}（低于下限 {n}）应被拒绝",
             kind="boundary", priority="P1", notes=f"依据 {rule.id}",
+            preconditions=f"构造 {n - 1}{unit} 的输入",
+            steps=["提交该输入"],
+            expected_results="请求被系统拒绝",
         ))
     elif any(w in rule.text for w in lexicon.UPPER_BOUND):
         tps.append(TestPoint(
             id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
             title=f"边界：取 {n}{unit}（恰好等于上限）应通过",
             kind="boundary", priority="P1", notes=f"依据 {rule.id}",
+            preconditions=f"构造 {n}{unit} 的输入",
+            steps=["提交该输入"],
+            expected_results=f"取 {n}{unit} 通过",
         ))
         tps.append(TestPoint(
             id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
             title=f"边界：取 {n + 1}{unit}（超过上限 {n}）应被拒绝",
             kind="boundary", priority="P1", notes=f"依据 {rule.id}",
+            preconditions=f"构造 {n + 1}{unit} 的输入",
+            steps=["提交该输入"],
+            expected_results="请求被系统拒绝",
         ))
     return tps
 
@@ -190,6 +205,9 @@ def _tp_from_rule(rule: BusinessRule) -> TestPoint:
         title=f"{'负向' if kind == 'negative' else '正向'}：{rule.text[:40]}",
         kind=kind,
         priority=_priority(rule.text, [rule]),
+        preconditions="",
+        steps=[],
+        expected_results=rule.text,
         notes=f"来源：{rule.id}（无 AC 覆盖，建议补验收标准）",
     )
 
@@ -224,6 +242,15 @@ def _enrich_by_llm(
         prio = str(raw.get("priority") or "P2").strip().upper()
         if prio not in ("P0", "P1", "P2"):    # Literal 只认 P0~P2，非法降级不报废
             prio = "P2"
+        #expected：LLM 给了就用（截断200）否则退回验收标准原文
+        exp_raw = str(raw.get("expected_results") or "").strip()
+        expected = exp_raw[:200] if exp_raw else ac_by_id[ac_id].text
+        #preconditions:strip + 截断
+        pre_raw = str(raw.get("preconditions") or "").strip()
+        preconditions = pre_raw[:200]
+        #steps: 逐条情绪i，非空才收，最多10条(防LLM塞垃圾）
+        steps_raw = raw.get("steps") or []
+        steps = [str(s).strip() for s in steps_raw if (s).strip()][:10]
         out.append(
             TestPoint(
                 id="",
@@ -233,6 +260,9 @@ def _enrich_by_llm(
                 title=title[:80],
                 kind=kind,                    # type: ignore[arg-type]
                 priority=prio,                # type: ignore[arg-type]
+                preconditions=preconditions,
+                steps=steps,
+                expected_results=expected,
                 notes=(str(raw.get("notes") or "")[:200] + "（来源：llm）").strip(),
             )
         )
@@ -246,6 +276,8 @@ def _build_prompt(module: ReqModule, acs: list[AcceptanceCriterion]) -> str:
         f"已有验收标准：\n{ac_lines}\n\n"
         "为每条验收标准补充 1~2 个业务语义测试点（异常流/状态组合/重复提交等），\n"
         "每条必须引用上面已有的 ac_id。不要重复正向用例。\n\n"
+        "expected 必须是【单一可断言】的结果（不要写多个期望并列）；\n"
+        "steps 推不出真实操作步骤就给空数组，不要编造点击操作。\n\n"
         "输出 JSON 数组，元素结构：\n"
         + json.dumps(
             {
@@ -253,6 +285,9 @@ def _build_prompt(module: ReqModule, acs: list[AcceptanceCriterion]) -> str:
                 "title": "测试点短名（中文）",
                 "kind": "exception|boundary|negative|positive",
                 "priority": "P0|P1|P2",
+                "preconditions":"前置条件（数据/状态准备，可空字符串）",
+                "steps": ["测试步骤（可空，推不出真实操作就给空数组）"],
+                "expected_results": "预期结果（单一断言的结果） 必填，缺失将会回退到验收标准原文",
                 "notes": "一句话设计依据",
             },
             ensure_ascii=False,

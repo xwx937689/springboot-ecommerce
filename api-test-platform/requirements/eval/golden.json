@@ -13,6 +13,8 @@
   "tp_requirements": {
     "must_trace_to_ac": true,
     "max_per_ac": 5,
-    "no_duplicate_titles": true
+    "no_duplicate_titles": true,
+    "must_have_expected": true
   }
 }
+
