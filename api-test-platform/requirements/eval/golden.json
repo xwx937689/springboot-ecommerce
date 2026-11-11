@@ -1,0 +1,18 @@
+{
+  "source": "samples/sample-prd.md",
+  "modules": ["认证与登录", "用户注册", "账号锁定", "购物车"],
+  "rules": [
+    {"module": "认证与登录", "text": "登录接口应在 1 秒内响应", "must_have": true},
+    {"module": "购物车", "text": "购物车上限", "must_have": true}
+  ],
+  "unambiguous_terms": ["尽快", "大约", "待定"],
+  "must_find_conflicts": [
+    {"keywords": ["50", "99"], "desc": "购物车上限数值矛盾"}
+  ],
+  "expected_ac_min": 7,
+  "tp_requirements": {
+    "must_trace_to_ac": true,
+    "max_per_ac": 5,
+    "no_duplicate_titles": true
+  }
+}

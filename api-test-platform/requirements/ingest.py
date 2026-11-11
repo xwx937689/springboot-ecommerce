@@ -1,4 +1,5 @@
 import zipfile
+import re
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from .errors import EXIT_FORMAT, EXIT_MISSING, InputError
@@ -12,30 +13,29 @@ def load_document(path:Path) ->str:
     if path.suffix.lower() != ".docx":
         raise InputError(EXIT_FORMAT, f"文件格式不支持: {path.suffix}")
     return _docx_to_markdown(path)
-
 def _docx_to_markdown(path):
     with zipfile.ZipFile(path) as zf:
       root = ET.parse(zf.open("word/document.xml")).getroot()
       body = root.find(f"{W}body")
+      style_level = _load_style_level(zf)
       lines = []
-      _walk(body,lines)
+      _walk(body,lines,style_level)
     return "\n".join(lines)
-def _walk(container,lines):
-    for elem in container:                # 只遍历直接子元素
+def _walk(BODY,LINES,STYLE_LEVEL):
+    for elem in BODY:                # 只遍历直接子元素
         if elem.tag == f"{W}p":                # 段落
             text = "".join(t.text or "" for t in elem.iter(f"{W}t")).strip()
-            style = _para_style(elem)          # 读 pPr/pStyle/@w:val
+            style = _para_style(elem,STYLE_LEVEL)          # 读 pPr/pStyle/@w:val
             prefix = ("#" * style + " ") if style else ""
             if text:
-                lines.append(prefix + text)
+                LINES.append(prefix + text)
         elif elem.tag == f"{W}tbl":            # 表格
             for i, tr in enumerate(elem.findall(f"{W}tr")):
                 cells = [ _cell_text(tc) for tc in tr.findall(f"{W}tc") ]
-                lines.append("| " + " | ".join(cells) + " |")
+                LINES.append("| " + " | ".join(cells) + " |")
                 if i == 0:
-                    lines.append("| " + " | ".join(["---"]*len(cells)) + " |")
+                    LINES.append("| " + " | ".join(["---"]*len(cells)) + " |")
         elif elem.tag == f"{W}sdt":           #加 w:sdt 分支：封面/目录丢、其他递归 sdtContent。
-            _walk(elem.find(f"{W}sdtContent"),lines)
             val =None
             sdt_pr = elem.find(f"{W}sdtPr")
             if sdt_pr is not None:
@@ -48,19 +48,28 @@ def _walk(container,lines):
                 continue          #封面/目录: 整块跳过
             content = elem.find(f"{W}sdtContent")
             if content is not None:    #sdtContent 可能不存在，判空防空崩
-                _walk(content,lines)
+                _walk(content,LINES,STYLE_LEVEL)
 
 def _cell_text(tc):
     # 单元格 <w:tc> 内含若干 <w:p>，逐段取 <w:t> 文字拼接
     return "".join(
         "".join(t.text or "" for t in p.iter(f"{W}t"))
         for p in tc.iter(f"{W}p")).strip()
-_STYLE_LEVEL = {
-    "1": 1,
-    "2": 2,
-    "3": 3,
-}
-def _para_style(elem):
+def _load_style_level(zf) -> dict:
+    stroot = zf.open("word/styles.xml")
+    #遍历 w:style，只要 w:type="paragraph"
+    styles = ET.parse(stroot).getroot()
+    out = {}
+    for style in styles.findall(f"{W}style"):
+       if not style.get(f"{W}type") == "paragraph":continue
+       name_el=style.find(W+"name")
+       if name_el is None:
+        continue
+       name = name_el.get(W +"val").replace("\u3000"," ").lower()
+       m = re.match(r"(?:heading|标题)\s*([1-9])", name)
+       if m:out[style.get(W + "styleId")] = int(m.group(1))
+    return out
+def _para_style(elem,STYLE_LEVEL):
     pPr = elem.find(W+"pPr")
     if pPr is None:
         return None
@@ -71,6 +80,6 @@ def _para_style(elem):
     #③ 属性带命名空间，去掉空格
     style_id = pStyle.get(W + "val")
     # ④ 查不到 → None
-    return _STYLE_LEVEL.get(style_id)
+    return STYLE_LEVEL.get(style_id)
 
 
