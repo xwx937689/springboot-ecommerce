@@ -1,29 +1,65 @@
 # golden  手写标准答案
 #run_eval 打分脚本 读 golden +读产物 -- 输出四个分数
-# ① 模块覆盖：golden.modules 每个都要在产物 module.title 里出现
-covered = [w for w in g["modules"] if any(w in m["title"] for m in p["modules"])]
-mod_score = len(covered) / len(g["modules"])
+import json
+from pathlib import Path
+import argparse
 
-# ② 规则命中：rules[].must_have 的 text 要被子串命中
-must = [r for r in g["rules"] if r.get("must_have")]
-hit = [r for r in must if any(r["text"] in x["text"] for x in p["rules"])]
-rule_score = len(hit) / len(must)
 
-# ③ 问题发现：unambiguous_terms 每个要出现在某条 finding.text；
-#    must_find_conflicts 的 keywords 要全部出现在 findings 里
-terms_ok = [t for t in g["unambiguous_terms"]
-            if any(t in f["text"] for f in p["findings"])]
-conf_ok = []
-for c in g["must_find_conflicts"]:
-    kws = c["keywords"]
-    conf_ok.append(all(any(k in f["text"] for f in p["findings"]) for k in kws))
-issue_score = (len(terms_ok) + sum(conf_ok)) / (len(g["unambiguous_terms"]) + len(g["must_find_conflicts"]))
+def _parse_args():
+    parser = argparse.ArgumentParser(description="需求分析 golden 标尺打分" )
+    parser.add_argument("--golden", required=True, help="标准答案 JSON路径")
+    parser.add_argument("--product", required=True, help="分析产物 JSON路径")
+    return parser.parse_args()
 
-# ④ 测试点质量：tp_requirements 四条
-tps = p["test_points"]
-trace_ok   = all(tp.get("ac_id") or tp.get("rule_ids") for tp in tps)   # 必须可溯源
-per_ac     = {tp["ac_id"] for tp in tps if tp.get("ac_id")}
-max_ok     = all(sum(1 for tp in tps if tp.get("ac_id")==a) <= g["tp_requirements"]["max_per_ac"] for a in per_ac)
-dup_ok     = len({tp["title"] for tp in tps}) == len(tps)
-exp_ok     = all(tp.get("expected_results","").strip() for tp in tps)   # 注意字段名！
-tp_pass    = all([trace_ok, max_ok, dup_ok, exp_ok])
+
+def main() -> int:
+    args = _parse_args()
+    golden = json.loads(Path(args.golden).read_text(encoding = "utf-8"))
+    product = json.loads(Path(args.product).read_text(encoding = "utf-8"))
+    mods = _flatten_modules(product["modules"])
+    print("产物模块数(拍平后):", len(mods))
+    score, missed = score_modules(golden, product)
+    print("模块覆盖:", score, "未命中:", missed)
+    score_r, missed_r = score_rules(golden, product)
+    print("规则命中:", score_r, "未命中:", missed_r)
+    return 0
+def _finding_text(f:dict) -> str:
+    """findings 没有text字段，可匹配的只有 evidence + reason。"""
+    return (f.get("evidence", "") +" "+ f.get("reason", "")).strip().lower()
+def _any_hit(needle:str,haystack:list[str]) -> bool:
+    n = needle.strip().lower()
+    return any(n in h.lower() for h in haystack)
+def score_modules(g:dict,p:dict) -> tuple[float,list[str]]:
+    """golden 的 modules 每个都按子串在产物 module.title 里查；返回（分数，未命中名）"""
+    titles = [m["title"] for m in _flatten_modules(p["modules"])]
+    missed = [w for w in g["modules"] if not _any_hit(w, titles)]
+    total = len(g["modules"])
+    if total == 0:
+        return 1.0, []
+    return (total-len(missed)) / total, missed
+def _flatten_modules(modules:list[dict]) -> list[dict]:
+    """modules在产物里是树（children 嵌套），拍平成列表再匹配。"""
+    out:list[dict] = []
+    for m in modules:
+        out.append(m)
+        out.extend(_flatten_modules(m.get("children",[])))
+    return out
+def score_rules(g: dict, p: dict) -> tuple[float, list[str]]:
+    """golden 的必选规则在产物 rules[].text 中子串命中；返回 (分数, 未命中锚点列表)。"""
+
+    # 1) 先筛：只考 must_have 标记为 true 的规则
+    #    .get("must_have") 而不是 ["must_have"]：没写这个键的规则默认"选考"，不报 KeyError
+    must = [r for r in g["rules"] if r.get("must_have")]
+    # 2) 防空：golden 里没有必选规则 → 没有可失败的项 → 默认通过
+    if not must:
+        return 1.0, []
+    # 3) 备好 haystack：产物侧所有规则的 text
+    #    只取 text，不要把 evidence 拼进来——这里考的是"规则本身被提取到了没有"
+    texts = [x["text"] for x in p["rules"]]
+    # 4) 逐条判定：没命中的，把它的 text 记进 missed（明细要给 CI 和人看）
+    missed = [r["text"] for r in must if not _any_hit(r["text"], texts)]
+    # 5) 得分 = 命中数 / 必选总数   ← 上次焊反的那个坑，这次自己防
+    return (len(must) - len(missed)) / len(must), missed
+
+if __name__ == "__main__":
+    main()
