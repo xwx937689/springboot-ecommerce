@@ -108,6 +108,18 @@ def generate(
                     AttributeError, TypeError) as exc:
                 stats["llm_modules_failed"] += 1
                 print(f"[WARN] LLM 测试点增强失败 {module.id}: {exc}")
+    # 3.5) 标题去重：同一规则被多条 AC 引用时，_boundary_tps 会为每条 AC 重复生成
+    #      相同的边界 TP；相同标题 = 相同输入与期望，保留首条。
+    before = len(tps)
+    seen: set[str] = set()
+    deduped: list[TestPoint] = []
+    for tp in tps:
+        if tp.title in seen:
+            continue
+        seen.add(tp.title)
+        deduped.append(tp)
+    tps = deduped
+    stats["tp_deduped"] = before - len(tps)
 
     for i, tp in enumerate(tps, 1):
         tp.id = f"TP-{i:03d}"          # 统一重排，保证连续
