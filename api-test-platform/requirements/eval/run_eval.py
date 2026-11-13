@@ -26,8 +26,14 @@ def main() -> int:
     print("问题发现:", si, "未命中:", mi)
     stp,mtp = score_tp_quality(golden, product)
     print("测试点质量通过:", stp, "失败项:", mtp)
-    ok = score_r == 1.0 and missed_r == 1.0 and si == 1.0 and stp
-    print("结论:", "PASS" if ok else "FAIL")
+    ac_ok = True
+    ac_min = golden.get("expected_ac_min")
+    if ac_min:
+        n = len(product["criteria"])
+        ac_ok = n >= ac_min
+        print(f"AC数量: {n} (要求 >={ac_min})")
+    ok = ac_ok and score == 1.0 and score_r == 1.0 and si == 1.0 and stp
+    print("结论：","PASS" if ok else "FAIL")
     return 0 if ok else 1
 def _finding_text(f:dict) -> str:
     """findings 没有text字段，可匹配的只有 evidence + reason。"""
@@ -46,8 +52,9 @@ def score_modules(g:dict,p:dict) -> tuple[float,list[str]]:
         return 1.0, []
     return (total-len(missed)) / total, missed
 def score_issue(g:dict,p:dict) -> tuple[float,list[str]]:
-    texts = [_finding_text(f) for f in p["issues"]]
+    texts = [_finding_text(f) for f in p["findings"]]
     terms = g.get("unambiguous_terms",[])
+    confs = g.get("must_find_conflicts", [])
     miss_t = [t for t in terms if not _any_hit(t, texts)]
     miss_c = []
     for c in confs:
@@ -81,27 +88,33 @@ def score_rules(g: dict, p: dict) -> tuple[float, list[str]]:
     missed = [r["text"] for r in must if not _any_hit(r["text"], texts)]
     # 5) 得分 = 命中数 / 必选总数   ← 上次焊反的那个坑，这次自己防
     return (len(must) - len(missed)) / len(must), missed
-def score_tp_quality(g:dict,p:dict) -> tuple[float,list[str]]:
-   req = g.get("tp_requirements",{})
-   tps = p.get("test_points",[])
-   fails:list[str] = []
-   if req.get("max_per_ac"):
-       per_ac = {}
-       for tp in tps:
-           a = tp.get("ac_id")
-           if a:
-               per_ac[a] = per_ac.get(a, 0) + 1
-       over = [a for a, n in per_ac.items() if n > req["max_per_ac"]]
-       if over:
-           fails.append(f"max_per_ac>{req['max_per_ac']}:{over}")
-   if req.get("no_duplicate_titles"):
-       if len({tp.get("title") for tp in tps}) != len(tps):
-           fails.append("duplicate_titles")
-   if req.get("must_have_expected"):
-       if not all(tp.get("expected_results", "").strip() for tp in tps):  # 注意字段名
-           fails.append("must_have_expected")
-   return (len(fails) == 0), fails
+def score_tp_quality(g: dict, p: dict) -> tuple[bool, list[str]]:
+    """按 golden.tp_requirements 逐项检查测试点质量；返回 (是否全过, 失败项列表)。"""
+    req = g.get("tp_requirements", {})
+    tps = p.get("test_points", [])
+    fails: list[str] = []
+
+    if req.get("must_trace_to_ac"):
+        # 每条 TP 至少要能追溯到一个 AC 或一条 BR；空列表同样算失败（all([]) 会误判通过）
+        if not tps or not all(tp.get("ac_id") or tp.get("rule_ids") for tp in tps):
+            fails.append("must_trace_to_ac")
+    if req.get("max_per_ac"):
+        per_ac: dict[str, int] = {}
+        for tp in tps:
+            a = tp.get("ac_id")
+            if a:
+                per_ac[a] = per_ac.get(a, 0) + 1
+        over = [a for a, n in per_ac.items() if n > req["max_per_ac"]]
+        if over:
+            fails.append(f"max_per_ac>{req['max_per_ac']}:{over}")
+    if req.get("no_duplicate_titles"):
+        if len({tp.get("title") for tp in tps}) != len(tps):
+            fails.append("duplicate_titles")
+    if req.get("must_have_expected"):
+        if not tps or not all(tp.get("expected_results", "").strip() for tp in tps):
+            fails.append("must_have_expected")
+    return (len(fails) == 0), fails
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
