@@ -7,7 +7,9 @@
     _omission()   待定项 / 只写成功路径 / 非功能无指标 -> 漏内容
     _clarity()    指代不明 / 开放式枚举        -> 表述不清
   LLM 层【可选】：逐模块补充语义级问题（业务矛盾、隐含前提），
-    type 必须在 4 类枚举内，evidence/reason 非空，否则丢弃。
+        type 必须在 4 类枚举内，evidence/reason 非空且 evidence 必须真实出自正文，
+    否则丢弃（与 extract 同一幻觉防线）。
+
 
 为什么规则层不依赖 LLM：
   质量结论要能进 CI、能对比版本、能解释。LLM 只做"补充"，不做"基线"。
@@ -25,7 +27,7 @@ from generator.config import LLMSettings
 from generator.llm import LLMError, extract_json_array, make_client
 
 from . import lexicon
-from .extract import _split_statements, _walk
+from .extract import _split_statements, _walk, _norm
 from .models import AmbiguityFinding, BusinessRule, FindingType, ReqModule, Severity
 
 _SYSTEM_PROMPT = (
@@ -227,6 +229,7 @@ def _clarity(module: ReqModule, sentences: list[str]) -> list[AmbiguityFinding]:
 def _by_llm(client, module: ReqModule) -> list[AmbiguityFinding]:
     reply = client.complete(_SYSTEM_PROMPT, _build_prompt(module))
     out: list[AmbiguityFinding] = []
+    dropped = 0
     for raw in extract_json_array(reply.text):
         if not isinstance(raw, dict):      # 垃圾条目（字符串/数字/null）直接跳过
             continue
@@ -235,6 +238,11 @@ def _by_llm(client, module: ReqModule) -> list[AmbiguityFinding]:
         reason = str(raw.get("reason", "")).strip()
         if ftype not in _VALID_TYPES or not evidence or not reason:
             continue                       # 结构非法直接丢，不猜
+        #幻觉防线:evidence 必须真的出自本模块正文（与extract._extract_by_llm 同一约定，
+        # 去空白比对 --llm换行/空格排版差异不算伪造）  新增整块
+        if _norm(evidence) not in _norm(module.content):
+            dropped +=1
+            continue
         sev = str(raw.get("severity", "medium")).strip().lower()
         out.append(_finding(
             module.id, FindingType(ftype),
@@ -244,6 +252,8 @@ def _by_llm(client, module: ReqModule) -> list[AmbiguityFinding]:
             suggestion=str(raw.get("suggestion", ""))[:200],
             source="llm",
         ))
+    if dropped:
+        print(f"[WARN] LLM 发现 {module.id}:丢弃{dropped}条（evidence 非原文）")
     return out
 
 
