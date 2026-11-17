@@ -262,7 +262,11 @@ def _enrich_by_llm(
         preconditions = pre_raw[:200]
         #steps: 逐条情绪i，非空才收，最多10条(防LLM塞垃圾）
         steps_raw = raw.get("steps") or []
-        steps = [str(s).strip() for s in steps_raw if (s).strip()][:10]
+        if isinstance(steps_raw,str): # 整串当一条步骤，防“点击提交按钮” 被拆成单字符
+            steps_raw = [steps_raw]
+        elif not isinstance(steps_raw,list): #数字/dict 等垃圾，当无步骤，不炸整个模块
+            steps_raw = []
+        steps = [s.strip() for s in steps_raw if isinstance(s,str) and s.strip()][:10]
         out.append(
             TestPoint(
                 id="",

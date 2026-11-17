@@ -1,5 +1,5 @@
-import argparse, json
 from  pathlib import Path
+import argparse, json, os
 
 def _load(p):
     return json.loads(Path(p).read_text(encoding="utf-8"))
@@ -16,6 +16,7 @@ def _cmd_list(args):
     rules = [r for r in product.get("rules",[]) if r.get("review_status","pending") == "pending"]
     acs = [c for c in product.get("criteria",[]) if c.get("review_status","pending") == "pending"]
     print(f"=== 待裁决项（pending）: 规则 {len(rules)} / AC {len(acs)} ===\n")
+    print(f"产物 sha256: {product.get('source_sha256','')}")
 
     groups = {}
     for r in rules: groups.setdefault(r["module_id"],{"r":[],"a":[]})["r"].append(r)
@@ -32,16 +33,40 @@ def _cmd_list(args):
             print(f"    text:{c.get('text','')}")
         print()
 def _cmd_apply(args):
-    product = _load(args.product)
-    decisions = _load(args.decisions)
+    try:
+       product = _load(args.product)
+       decisions = _load(args.decisions)
+    except FileNotFoundError as e:
+        print(f"[ERROR] 文件不存在: {e.filename}")
+        return 1
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] 决策文件JSON解析失败: {e}")
+        return 1
     by_id = {}
     for r in product["rules"]:
         by_id[r["id"]] = r
     for c in product["criteria"]:
         by_id[c["id"]] = c
-
+    if not  isinstance(decisions,dict):
+        print(f"[ERROR] 决策文件必须是JSON对象（{...}）")
+        return 1
     decs = decisions.get("decisions", {})
+    if not isinstance(decs,dict) or not decs:
+        print('[ERROR] 决策文件缺少非空的decisions 对象，格式：{"decisions":{"BR-001":"approved"}}')
+        return 1
     VALID = {"approved", "rejected"}
+    # 版本绑定：决策文件带 product_sha256 时必须与产物一致，防旧决策重放到新版本产物上
+    expect_sha = product.get("source_sha256", "")
+    claimed_sha = decisions.get("product_sha256", "")
+    if claimed_sha and claimed_sha != expect_sha:
+        print(f"[ERROR] 决策文件对应的是另一版产物（决策 sha={claimed_sha[:8]}… / 产物 sha={expect_sha[:8]}…）")
+        return 1
+    if not claimed_sha:
+        print("[WARN] 决策文件未绑定 product_sha256（建议从 list 输出复制，防旧决策重放）")
+    tmp = Path(str(args.product) + ".tmp")
+    tmp.write_text(json.dumps(product, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, args.product)      # 同目录同卷，os.replace 是原子替换：中途崩溃不留半个 JSON
+
     # 第一遍：全校验，任一不合法立即报错且不写文件（要么全对、要么不动）
     for id_, status in decs.items():
         if id_ not in by_id:

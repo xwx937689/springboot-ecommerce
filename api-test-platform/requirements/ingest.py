@@ -2,7 +2,7 @@ import zipfile
 import re
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from .errors import EXIT_FORMAT, EXIT_MISSING, InputError
+from .errors import EXIT_FORMAT, EXIT_MISSING, EXIT_UNREADABLE, InputError
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -14,12 +14,21 @@ def load_document(path:Path) ->str:
         raise InputError(EXIT_FORMAT, f"文件格式不支持: {path.suffix}")
     return _docx_to_markdown(path)
 def _docx_to_markdown(path):
-    with zipfile.ZipFile(path) as zf:
-      root = ET.parse(zf.open("word/document.xml")).getroot()
-      body = root.find(f"{W}body")
-      style_level = _load_style_level(zf)
-      lines = []
-      _walk(body,lines,style_level)
+    try:
+       with zipfile.ZipFile(path) as zf:
+           root = ET.parse(zf.open("word/document.xml")).getroot()
+           body = root.find(f"{W}body")
+           if body is None:
+              raise InputError(EXIT_UNREADABLE,f"DOCX 结构异常：缺少<w:body>({path})")
+           style_level = _load_style_level(zf)
+           lines = []
+           _walk(body,lines,style_level)
+    except zipfile.BadZipFile:
+        raise InputError(EXIT_UNREADABLE,f"DOCX  损坏或不是有效的docx文件：({path})") from None
+    except KeyError as e:
+        raise InputError(EXIT_UNREADABLE,f"DOCX 缺少必需的XML部件：{e}({path})") from  None
+    except ET.ParseError as e:
+        raise InputError(EXIT_UNREADABLE,f"DOCX 内部XML畸形：{e}({path})") from None
     return "\n".join(lines)
 def _walk(BODY,LINES,STYLE_LEVEL):
     for elem in BODY:                # 只遍历直接子元素
