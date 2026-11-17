@@ -218,7 +218,7 @@ def _classify_rule(text: str) -> str:
         k in text for k in ("最多", "最少", "至少", "不超过", "上限", "下限")
     ):
         return "constraint"
-    if any(k in text for k in ("不能", "不得", "禁止", "不允许", "仅", "只允许")):
+    if any(k in text for k in ("不能", "不得", "禁止", "不允许", "仅", "只允许", "只能", "仅可")):
         return "permission"
     if any(k in text for k in ("状态", "变为", "生成", "流程")):
         return "workflow"
