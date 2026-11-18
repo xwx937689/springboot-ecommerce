@@ -48,7 +48,6 @@ _SYSTEM_PROMPT = (
 )
 
 _TP_KINDS = {"positive", "boundary", "negative", "exception"}
-_PERMISSION = ("不能", "不得", "禁止", "不允许", "仅", "只允许")
 _CORE_WORDS = ("支付", "订单", "登录", "注册", "库存")   # 核心业务词 -> P0
 
 
@@ -149,27 +148,30 @@ def _tps_from_ac(ac: AcceptanceCriterion, ref_rules: list[BusinessRule]) -> list
     ]
     for r in ref_rules:
         out.extend(_boundary_tps(r, ac))
-    if any(w in ac.text for w in _PERMISSION) or any(
-        w in r.text for r in ref_rules for w in _PERMISSION
+    if any(w in ac.text for w in lexicon.PERMISSION_WORDS) or any(
+        w in r.text for r in ref_rules for w in lexicon.PERMISSION_WORDS
     ):
+        ctx = ac.text + " " + " ".join(r.text for r in ref_rules)
+        identity = any(w in ctx for w in lexicon.IDENTITY_WORDS)
         out.append(
             TestPoint(
                 id="",
                 ac_id=ac.id,
                 rule_ids=rule_ids,
                 module_id=ac.module_id,
-                title=f"负向：以未授权/非法身份执行 —— {ac.text[:34]}",
+                title=(f"负向：以未授权/非法身份执行 —— {ac.text[:34]}"
+                       if identity else
+                       f"负向：违反该约束执行 —— {ac.text[:34]}"),
                 kind="negative",
                 priority="P0",
-                preconditions="以未授权身份请求",
+                preconditions=("以未授权身份请求" if identity
+                               else "构造违反该约束的输入/操作"),
                 steps=["发起该请求"],
                 expected_results="请求被系统拒绝",
                 notes="依据权限类规则，验证系统拒绝",
             )
         )
     return out
-
-
 def _boundary_tps(rule: BusinessRule, ac: AcceptanceCriterion) -> list[TestPoint]:
     """从规则文本抠数值边界：下限产 N-1，上限产 N 和 N+1。"""
     m = lexicon.NUMBER_UNIT.search(rule.text)
