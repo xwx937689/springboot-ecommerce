@@ -57,11 +57,11 @@ def extract(
     stats = {
         "modules": len(flat),
         "engine": "llm" if client else "rule",
-        "llm_modules_ok": 0,
+        "llm_modules_ok": 0,  # 全部条目存活
+        "llm_modules_partial": 0,  # 新增：有产出但有丢弃（部分成功）
         "llm_modules_failed": 0,
         "llm_modules_fallback": 0,
     }
-
     for module in flat:
         if not module.content.strip():
             continue          # 纯容器章节（只有标题没正文）跳过，避免造出空规则
@@ -72,12 +72,13 @@ def extract(
             # 全局序号不被污染（否则回退后 ID 断号）
             local_br, local_ac = br_seq.copy(), ac_seq.copy()
             try:
-                r, a = _extract_by_llm(client, module, local_br, local_ac)
+                r, a, dropped = _extract_by_llm(client, module, local_br, local_ac)
                 rules.extend(r)
                 criteria.extend(a)
-                br_seq[0], ac_seq[0] = local_br[0], local_ac[0]   # 全模块成功才提交
+                br_seq[0], ac_seq[0] = local_br[0], local_ac[0]  # 全模块成功才提交
                 stats["llm_modules_ok"] += 1
-                used_llm = True
+                if dropped:
+                    stats["llm_modules_partial"] += 1  # 部分成功不再冒充完整成功
             except (LLMError, json.JSONDecodeError, ValueError,
                     AttributeError, TypeError) as exc:
                 # AttributeError/TypeError：LLM 返回的元素不是 dict（["bad", null]）
@@ -284,10 +285,18 @@ def _extract_by_llm(
             derived = str(raw.get("derived_from") or "").strip()
             # 优先 ref（LLM 改写文字也不影响关联），退回原文精确匹配
             rid = ref_to_id.get(derived) or text_to_rule_id.get(derived) or ""
-            # LLM 可直接给三态；只给旧布尔时按 testable 映射
+            # LLM 可直接给三态；只给旧布尔时严格映射。
+            # P1-9：bool("false") 是 True 的经典坑，必须显式处理字符串形态
             status = str(raw.get("testability") or "").strip().lower()
             if status not in _TESTABILITY_VALUES:
-                status = "testable" if bool(raw.get("testable", True)) else "untestable"
+                t_raw = raw.get("testable")
+                if isinstance(t_raw, bool):
+                    ok = t_raw
+                elif isinstance(t_raw, str) and t_raw.strip().lower() in {"false", "no", "0"}:
+                    ok = False
+                else:
+                    ok = True  # 缺省/垃圾值才默认可测
+                status = "testable" if ok else "untestable"
             criteria.append(
                 AcceptanceCriterion(
                     id=f"AC-{ac_seq[0]:03d}",
@@ -305,7 +314,7 @@ def _extract_by_llm(
         raise ValueError("LLM 未产出任何合法条目")
     if dropped:
         print(f"[WARN] LLM 条目 {module.id}: 丢弃 {dropped} 条（无原文证据/结构非法）")
-    return rules, criteria
+    return rules, criteria,dropped
 
 
 def _build_prompt(module: ReqModule) -> str:
