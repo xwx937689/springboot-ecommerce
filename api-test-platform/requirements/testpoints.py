@@ -107,18 +107,11 @@ def generate(
                     AttributeError, TypeError) as exc:
                 stats["llm_modules_failed"] += 1
                 print(f"[WARN] LLM 测试点增强失败 {module.id}: {exc}")
-    # 3.5) 标题去重：同一规则被多条 AC 引用时，_boundary_tps 会为每条 AC 重复生成
-    #      相同的边界 TP；相同标题 = 相同输入与期望，保留首条。
+
+    # 3.5) 去重（三元组键 + 合并追溯，见 _dedupe_tps）
     before = len(tps)
-    seen: set[str] = set()
-    deduped: list[TestPoint] = []
-    for tp in tps:
-        if tp.title in seen:
-            continue
-        seen.add(tp.title)
-        deduped.append(tp)
-    tps = deduped
-    stats["tp_deduped"] = before - len(tps)
+    tps, deduped_count = _dedupe_tps(tps)
+    stats["tp_deduped"] = deduped_count
 
     for i, tp in enumerate(tps, 1):
         tp.id = f"TP-{i:03d}"          # 统一重排，保证连续
@@ -229,6 +222,29 @@ def _tp_from_rule(rule: BusinessRule) -> TestPoint:
 def _rule_id_of(tp: TestPoint) -> str:
     m = re.search(r"(BR-\d{3})", tp.notes or "")
     return m.group(1) if m else ""
+def _dedupe_tps(tps: list[TestPoint]) -> tuple[list[TestPoint], int]:
+    """去重：键 = (kind, title, expected_results)。
+
+    仅标题相同但预期不同 = 两个不同的测试（如两条 AC 截断后撞标题），
+    必须都保留、各带自己的追溯；三元组完全相同（同一规则经多条 AC
+    重复生成的边界 TP）才合并，合并时 rule_ids 并入首条，追溯不丢。
+    """
+    seen: dict[tuple[str, str, str], int] = {}
+    out: list[TestPoint] = []
+    merged = 0
+    for tp in tps:
+        key = (tp.kind, tp.title, tp.expected_results)
+        idx = seen.get(key)
+        if idx is not None:
+            kept = out[idx]
+            kept.rule_ids = list(dict.fromkeys(kept.rule_ids + tp.rule_ids))
+            if not kept.ac_id and tp.ac_id:
+                kept.ac_id = tp.ac_id
+            merged += 1
+            continue
+        seen[key] = len(out)
+        out.append(tp)
+    return out, merged
 
 
 def _priority(text: str, rules: list[BusinessRule]) -> Priority:
