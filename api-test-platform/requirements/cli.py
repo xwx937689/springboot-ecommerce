@@ -36,7 +36,7 @@ from .models import (
 from .parse import parse_text
 from .testpoints import generate
 from .ingest import load_document
-from .errors import EXIT_EMPTY, EXIT_ENCODING, EXIT_MISSING, EXIT_OK, EXIT_UNREADABLE, InputError
+from .errors import EXIT_EMPTY, EXIT_ENCODING, EXIT_FORMAT, EXIT_MISSING, EXIT_OK, EXIT_UNREADABLE, InputError
 
 def main(argv: list[str] | None = None) -> int:
     # Windows 控制台默认 GBK，中文输出会乱码/报错（与 analyzer/summary.py 同一处理）
@@ -140,11 +140,12 @@ def _relative(path: Path) -> str:
 def _load_text(path: Path) -> str:
     """读 PRD 文本，把 I/O 异常翻译成【带退出码 + 人能看懂】的提示。
 
-    覆盖 4 类输入问题（对应退出码 2/2/3/4 与 1）：
+    覆盖 5 类输入问题（对应退出码 2/2/3/4/5 与 1）：
       - 文件不存在 / 传了个目录
       - 权限不足或磁盘读失败（PermissionError/OSError）
       - 编码不是 UTF-8（UnicodeDecodeError，常见于 Windows 记事本存成 GBK）
       - 内容是空白（只有空格/换行）
+      - 扩展名不在白名单（PDF/JSON/TXT 等，读文件前拒收）
     """
     if not path.exists():
         raise InputError(EXIT_MISSING, f"需求文档不存在: {path}")
@@ -153,6 +154,12 @@ def _load_text(path: Path) -> str:
     if path.suffix.lower() == ".docx":
         # docx走ingest
         return load_document(path)
+    if path.suffix.lower() not in (".md", ".markdown"):
+        # P1-10：白名单外提前拒收，避免 PDF/JSON 等被当文本读出乱码或误导性"编码错误"
+        raise InputError(
+            EXIT_FORMAT,
+            f"不支持的文件格式: {path.suffix or '(无扩展名)'}（支持 .md/.markdown/.docx）: {path}",
+        )
     try:
         text = path.read_text(encoding="utf-8-sig")
     except PermissionError:
