@@ -50,15 +50,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--prd", default=str(root / "requirements" / "samples" / "sample-prd.md"))
     ap.add_argument("--out", default=str(root / "artifacts" / "requirements.json"))
     ap.add_argument("--provider", default=None, help="覆盖 .env 的 LLM provider（默认跟随配置）")
+    ap.add_argument("--skip-tps", action="store_true",
+                    help="跳过 TP 生成（复核先行工作流：分析 → review → tps，省一轮草稿 TP 的 LLM 调用）")
     args = ap.parse_args(argv)
 
     settings = LLMSettings.from_env()
     if args.provider:
         settings.provider = args.provider
-    return run(Path(args.prd), Path(args.out), settings)
+    return run(Path(args.prd), Path(args.out), settings, skip_tps=args.skip_tps)
 
 
-def run(prd: Path, out: Path, settings: LLMSettings) -> int:
+def run(prd: Path, out: Path, settings: LLMSettings, skip_tps: bool = False) -> int:
     # 1) 读文件：不存在/目录/权限/编码/空文件 全部在这里收敛
     try:
         text = _load_text(prd)
@@ -84,8 +86,13 @@ def run(prd: Path, out: Path, settings: LLMSettings) -> int:
     # 3) 质量问题
     findings, analyze_stats = analyze(modules, rules, settings)
 
-    # 4) 测试点
-    test_points, tp_stats = generate(modules, rules, criteria, settings)
+    # 4) 测试点（--skip-tps：复核先行工作流跳过草稿 TP，省一轮 LLM 调用）
+    if skip_tps:
+        test_points: list = []
+        tp_stats = {"skipped": True, "criteria": 0, "testable": 0,
+                    "brs_total": len(rules), "brs_covered": 0}
+    else:
+        test_points, tp_stats = generate(modules, rules, criteria, settings)
 
     # 5) 指标 + 落盘（stats 用固定结构的 AnalysisStats，报表/CI 不依赖自由 dict）
     metrics = _metrics(criteria, findings, test_points, analyze_stats, tp_stats)
