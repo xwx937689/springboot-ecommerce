@@ -166,41 +166,50 @@ def _tps_from_ac(ac: AcceptanceCriterion, ref_rules: list[BusinessRule]) -> list
         )
     return out
 def _boundary_tps(rule: BusinessRule, ac: AcceptanceCriterion) -> list[TestPoint]:
-    """从规则文本抠数值边界：下限产 N-1，上限产 N 和 N+1。"""
-    m = lexicon.NUMBER_UNIT.search(rule.text)
-    if not m:
-        return []
-    n, unit = int(m.group(1)), m.group(2)
+    """从规则文本抠数值边界：下限产 N-1，上限产 N 和 N+1。
+
+    P1-8：NUMBER_UNIT.finditer 取全部数值；方向按"该数值前的就近文本段"判
+    （"至少 8 位，最多 20 位"两个数各自归自己的方向）；下限 N-1<0 时该边界
+    不生成（无效数据宁缺勿滥）；单规则最多取 3 个数值防 TP 爆炸。
+    """
+    matches = list(lexicon.NUMBER_UNIT.finditer(rule.text))[:3]
     tps: list[TestPoint] = []
-    if any(w in rule.text for w in lexicon.LOWER_BOUND):
-        tps.append(TestPoint(
-            id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
-            title=f"边界：取 {n - 1}{unit}（低于下限 {n}）应被拒绝",
-            kind="boundary", priority="P1", notes=f"依据 {rule.id}",
-            preconditions=f"构造 {n - 1}{unit} 的输入",
-            steps=["提交该输入"],
-            expected_results="请求被系统拒绝",
-        ))
-    elif any(w in rule.text for w in lexicon.UPPER_BOUND):
-        tps.append(TestPoint(
-            id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
-            title=f"边界：取 {n}{unit}（恰好等于上限）应通过",
-            kind="boundary", priority="P1", notes=f"依据 {rule.id}",
-            preconditions=f"构造 {n}{unit} 的输入",
-            steps=["提交该输入"],
-            expected_results=f"取 {n}{unit} 通过",
-        ))
-        tps.append(TestPoint(
-            id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
-            title=f"边界：取 {n + 1}{unit}（超过上限 {n}）应被拒绝",
-            kind="boundary", priority="P1", notes=f"依据 {rule.id}",
-            preconditions=f"构造 {n + 1}{unit} 的输入",
-            steps=["提交该输入"],
-            expected_results="请求被系统拒绝",
-        ))
+    prev_end = 0
+    for m in matches:
+        # 方向看"上一个数值之后到当前数值之前"的文本段（就近原则），
+        # 而不是整条规则全文——多数值规则各数值方向互不干扰
+        segment = rule.text[prev_end:m.start()]
+        prev_end = m.end()
+        n, unit = int(m.group(1)), m.group(2)
+        if any(w in segment for w in lexicon.LOWER_BOUND):
+            if n - 1 < 0:                       # 下限 0 -> N-1=-1 无效，跳过
+                continue
+            tps.append(TestPoint(
+                id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
+                title=f"边界：取 {n - 1}{unit}（低于下限 {n}）应被拒绝",
+                kind="boundary", priority="P1", notes=f"依据 {rule.id}",
+                preconditions=f"构造 {n - 1}{unit} 的输入",
+                steps=["提交该输入"],
+                expected_results="请求被系统拒绝",
+            ))
+        elif any(w in segment for w in lexicon.UPPER_BOUND):
+            tps.append(TestPoint(
+                id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
+                title=f"边界：取 {n}{unit}（恰好等于上限）应通过",
+                kind="boundary", priority="P1", notes=f"依据 {rule.id}",
+                preconditions=f"构造 {n}{unit} 的输入",
+                steps=["提交该输入"],
+                expected_results=f"取 {n}{unit} 通过",
+            ))
+            tps.append(TestPoint(
+                id="", ac_id=ac.id, rule_ids=[rule.id], module_id=ac.module_id,
+                title=f"边界：取 {n + 1}{unit}（超过上限 {n}）应被拒绝",
+                kind="boundary", priority="P1", notes=f"依据 {rule.id}",
+                preconditions=f"构造 {n + 1}{unit} 的输入",
+                steps=["提交该输入"],
+                expected_results="请求被系统拒绝",
+            ))
     return tps
-
-
 def _tp_from_rule(rule: BusinessRule) -> TestPoint:
     """没有 AC 覆盖的 BR 直接出测试点，用 rule_ids 建立数据级追溯。"""
     kind: TestPointKind = "negative" if rule.category == "permission" else "positive"
