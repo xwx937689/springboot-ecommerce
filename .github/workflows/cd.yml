@@ -1,8 +1,11 @@
 name: CD — Build & Push Images
 
 on:
-  push:
-    branches: [main]
+  # 手动触发（Actions 页面 Run workflow）——避免每次 push 都构建镜像消耗资源。
+  # 需要恢复"push 自动构建"时，解开下方注释即可。
+  workflow_dispatch: { }
+  # push:
+  #   branches: [main]
 
 jobs:
   publish:
