@@ -1,24 +1,26 @@
 name: Requirements Gate
 
-# 需求分析质量门禁：golden 样本回归（mock 路径，确定性，零密钥）。
+# 需求分析质量门禁：golden 样本回归（mock 路径，确定性，零密钥零 LLM token）。
 # 与本地手动入口 requirements/eval/check.ps1 共用同一脚本同一判分逻辑——
 # "先手动后自动"的既定决策：接 CI 只是把入口挂上，判分不换轨。
-# 触发范围：需求包代码/词表/样例/golden/本文件变更才跑，无关提交不空跑。
+#
+# 当前仅手动触发（Actions 页面 Run workflow）——避免每次提交空跑消耗资源。
+# 全流程跑通后再启用自动触发：解开下方 push/pull_request 注释即可。
 
 on:
   workflow_dispatch: { }
-  push:
-    branches: [ main ]
-    paths:
-      - 'api-test-platform/requirements/**'
-      - 'api-test-platform/pyproject.toml'
-      - '.github/workflows/requirements-gate.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'api-test-platform/requirements/**'
-      - 'api-test-platform/pyproject.toml'
-      - '.github/workflows/requirements-gate.yml'
+  # push:
+  #   branches: [ main ]
+  #   paths:
+  #     - 'api-test-platform/requirements/**'
+  #     - 'api-test-platform/pyproject.toml'
+  #     - '.github/workflows/requirements-gate.yml'
+  # pull_request:
+  #   branches: [ main ]
+  #   paths:
+  #     - 'api-test-platform/requirements/**'
+  #     - 'api-test-platform/pyproject.toml'
+  #     - '.github/workflows/requirements-gate.yml'
 
 jobs:
   golden-gate:
