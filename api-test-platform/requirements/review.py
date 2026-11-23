@@ -48,7 +48,7 @@ def _cmd_apply(args):
     for c in product["criteria"]:
         by_id[c["id"]] = c
     if not  isinstance(decisions,dict):
-        print(f"[ERROR] 决策文件必须是JSON对象（{...}）")
+        print("[ERROR] 决策文件必须是JSON对象（{...}）")
         return 1
     decs = decisions.get("decisions", {})
     if not isinstance(decs,dict) or not decs:
@@ -63,10 +63,6 @@ def _cmd_apply(args):
         return 1
     if not claimed_sha:
         print("[WARN] 决策文件未绑定 product_sha256（建议从 list 输出复制，防旧决策重放）")
-    tmp = Path(str(args.product) + ".tmp")
-    tmp.write_text(json.dumps(product, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, args.product)      # 同目录同卷，os.replace 是原子替换：中途崩溃不留半个 JSON
-
     # 第一遍：全校验，任一不合法立即报错且不写文件（要么全对、要么不动）
     for id_, status in decs.items():
         if id_ not in by_id:
@@ -81,7 +77,9 @@ def _cmd_apply(args):
     # 第二遍：全合法才落盘
     for id_, status in decs.items():
         by_id[id_]["review_status"] = status
-    Path(args.product).write_text(json.dumps(product, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = Path(str(args.product) + ".tmp")
+    tmp.write_text(json.dumps(product, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, args.product)      # 原子替换，中途崩溃不留半个 JSON
     approved = sum(1 for s in decs.values() if s == "approved")
     rejected = sum(1 for s in decs.values() if s == "rejected")
     remaining = sum(1 for it in by_id.values() if it["review_status"] == "pending")
