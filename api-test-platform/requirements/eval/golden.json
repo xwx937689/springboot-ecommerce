@@ -1,20 +1,43 @@
 {
-  "source": "samples/sample-prd.md",
-  "modules": ["用户登录", "购物车", "订单", "非功能要求"],
+  "golden_version": "1.0",
+  "product_sha256": "d422b88487e8adebbcfad082db14427bb78358be8325af6823a5269c9f0c530c",
+  "notes": "手写标准答案：绑定《产品需求说明书（PRD）模板.docx》（提取文本 sha256 前缀 d422b884）。所有条目独立自 PRD 原文编写，未参考分析产物——标尺与考生隔离。",
+  "modules": [
+    "概述", "业务问题/项目背景", "系统构想", "系统范围", "系统视图",
+    "高阶架构图", "主要系统功能", "引用/参考", "系统的业务用户", "业务词汇表",
+    "业务流程和业务场景", "功能性需求", "外部集成需求", "外部硬件集成需求",
+    "外部软件集成需求", "其它非功能性需求", "性能需求", "安全性需求",
+    "附录", "需求跟踪矩阵"
+  ],
   "rules": [
-    {"module": "用户登录", "text": "1秒内响应", "must_have": true},
-    {"module": "购物车", "text": "购物车上限", "must_have": true}
+    {"text": "1.5秒", "must_have": true, "why": "性能：界面/事务平均响应时间 < 1.5 秒（PRD 性能需求第 1 条）"},
+    {"text": "低于5秒", "must_have": true, "why": "性能：在线实时查询数据处理时间 < 5 秒"},
+    {"text": "99.98%", "must_have": true, "why": "可靠性：系统整体可用率 99.98%"},
+    {"text": "10分钟", "must_have": true, "why": "可靠性：非计划性单次宕机时长 <= 10 分钟"},
+    {"text": "集群部署", "must_have": true, "why": "高可用：应用系统平台使用集群部署方案"},
+    {"text": "增量备份", "must_have": true, "why": "备份机制支持全量/增量备份"},
+    {"text": "停机发布", "must_have": true, "why": "发布机制：停机/不停机发布二选一"},
+    {"text": "Android", "must_have": true, "why": "移动端：IOS/Android 双版本并适配主流机型"},
+    {"text": "盖章的体检单", "must_have": true, "why": "业务规则：只对盖章的体检单进行体检（当前流程规则表）"},
+    {"text": "撞单", "must_have": true, "why": "业务规则：预约安排需避免撞单（业务用户C核心关注点）"},
+    {"text": "获取预约单", "must_have": true, "why": "外部集成：客服->体检的服务接口『获取预约单』"},
+    {"text": "5个主要功能", "must_have": true, "why": "系统视图：列出最多 5 个主要功能"},
+    {"text": "建议另外开设一个窗口", "must_have": false, "why": "选考：『建议』属软性表述，不强制捕获"},
+    {"text": "大型项目对关键用户进行分层", "must_have": false, "why": "选考：『建议』级要求，不进分母"}
   ],
-  "unambiguous_terms": ["尽快", "大约", "待定"],
+  "unambiguous_terms": [
+    "XXXXX", "Xxx、xxx", "及时", "快速", "较大偏差", "二选一", "撞单"
+  ],
   "must_find_conflicts": [
-    {"keywords": ["50", "99"], "desc": "购物车上限数值矛盾"}
+    {"keywords": ["修改", "返回报告"], "desc": "返回报告用例标注为『修改』但行为是新增领取记录，类型与行为冲突"},
+    {"keywords": ["影响", "外购"], "desc": "子系统类型列『影响』与『新增/修改/外购』不在同一维度，枚举口径冲突"},
+    {"keywords": ["99.98", "宕机"], "desc": "可用率 99.98% 与单次宕机 10 分钟两条可靠性指标需联合审视（统计周期均未定义）"}
   ],
-  "expected_ac_min": 7,
   "tp_requirements": {
     "must_trace_to_ac": true,
-    "max_per_ac": 5,
     "no_duplicate_titles": true,
-    "must_have_expected": true
-  }
+    "must_have_expected": true,
+    "max_per_ac": 5
+  },
+  "expected_ac_min": 200
 }
-

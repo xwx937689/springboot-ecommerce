@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 兜底：直接跑 pytest 也能找到包
 
 from requirements.eval.run_eval import (
-    _any_hit, score_modules, score_rules, score_issue, score_tp_quality,
+    _any_hit, check_binding, score_modules, score_rules, score_issue, score_tp_quality,
 )
 
 
@@ -86,7 +86,9 @@ def test_score_issue_terms_and_conflicts():
 
 def test_score_issue_missed_conflict():
     g = {"unambiguous_terms": [], "must_find_conflicts": [{"keywords": ["50", "99"], "desc": "x"}]}
-    score, missed = score_issue(g, _product_findings(["只有 50 没有 99"]))
+    # 只出现一个关键词（50），99 缺席 -> 冲突未命中（历史坑：fixture 曾写成"只有 50 没有 99"，
+    # 99 也在句子里，共现判定正确发现冲突，测试意图永远触发不了）
+    score, missed = score_issue(g, _product_findings(["上限只有 50，未提另一个值"]))
     assert missed == ["x"]
 
 
@@ -104,3 +106,17 @@ def test_tp_quality_duplicate_titles():
     ok, fails = score_tp_quality({"tp_requirements": {"no_duplicate_titles": True}},
                                  {"test_points": tps})
     assert "duplicate_titles" in fails
+
+
+# ---------- check_binding（golden 版本绑定，防旧标尺重放） ----------
+
+def test_binding_mismatch_rejected():
+    assert check_binding({"product_sha256": "aaa"}, {"source_sha256": "bbb"}) is False
+
+def test_binding_match_passes():
+    assert check_binding({"product_sha256": "aaa"}, {"source_sha256": "aaa"}) is True
+
+def test_binding_unbound_passes_through():
+    # 任一侧未绑定不拦截——绑定是增强项，不是硬前提
+    assert check_binding({}, {"source_sha256": "aaa"}) is True
+    assert check_binding({"product_sha256": "aaa"}, {}) is True

@@ -12,10 +12,25 @@ def _parse_args():
     return parser.parse_args()
 
 
+def check_binding(golden: dict, product: dict) -> bool:
+    """golden 绑定 PRD 版本：product_sha256 与产物 source_sha256 不一致 → 拒绝打分。
+
+    与 review 的决策文件防重放同一哲学：旧标尺不许给新文档打分。
+    任一侧未绑定（空串）时放行——绑定是增强项，不是硬前提。
+    """
+    expect = golden.get("product_sha256", "")
+    actual = product.get("source_sha256", "")
+    return (not expect) or (not actual) or expect == actual
+
+
 def main() -> int:
     args = _parse_args()
     golden = json.loads(Path(args.golden).read_text(encoding = "utf-8"))
     product = json.loads(Path(args.product).read_text(encoding = "utf-8"))
+    if not check_binding(golden, product):
+        print(f"[ERROR] golden 对应另一版 PRD（golden sha={golden.get('product_sha256', '')[:8]}… / "
+              f"产物 sha={product.get('source_sha256', '')[:8]}…），拒绝打分")
+        return 1
     mods = _flatten_modules(product["modules"])
     print("产物模块数(拍平后):", len(mods))
     score, missed = score_modules(golden, product)

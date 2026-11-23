@@ -59,6 +59,42 @@ class OpenAICompatClient:
         )
 
 
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        """Agent harness 用：带工具调用的对话轮，返回 assistant 消息 dict。
+
+        兼容 OpenAI tool_calls 协议；_model/_usage 是审计字段（下划线前缀 =
+        非协议字段，进消息队列前由 harness 摘除）。
+        """
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=self.settings.api_key,
+            base_url=self.settings.base_url or None,
+            timeout=self.settings.timeout,
+        )
+        kwargs: dict = {
+            "model": self.settings.model or "gpt-4o-mini",
+            "temperature": self.settings.temperature,
+            "messages": messages,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        resp = client.chat.completions.create(**kwargs)
+        m = resp.choices[0].message
+        return {
+            "role": "assistant",
+            "content": m.content or "",
+            "tool_calls": [
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in (m.tool_calls or [])
+            ],
+            "_model": resp.model,
+            "_usage": ({"prompt_tokens": resp.usage.prompt_tokens,
+                        "completion_tokens": resp.usage.completion_tokens} if resp.usage else {}),
+        }
+
+
 class AnthropicClient:
     def __init__(self, settings: LLMSettings):
         if not settings.api_key:
@@ -90,6 +126,10 @@ class AnthropicClient:
             model=data.get("model", ""),
             usage=data.get("usage", {}),
         )
+
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+        raise NotImplementedError("轻量版 Agent harness 仅支持 openai 兼容端点（tools 循环）")
 
 
 def make_client(settings: LLMSettings):
