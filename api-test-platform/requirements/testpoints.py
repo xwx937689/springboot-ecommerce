@@ -112,7 +112,15 @@ def generate(
     before = len(tps)
     tps, deduped_count = _dedupe_tps(tps)
     stats["tp_deduped"] = deduped_count
-
+    seen: set[str] = set()
+    deduped:list[TestPoint] = []
+    for tp in tps:
+        if tp.title in seen:
+            continue
+        seen.add(tp.title)
+        deduped.append(tp)
+    tps = deduped
+    stats["tp_deduped"] = before - len(tps)
     for i, tp in enumerate(tps, 1):
         tp.id = f"TP-{i:03d}"          # 统一重排，保证连续
     stats["test_points"] = len(tps)
