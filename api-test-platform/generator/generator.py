@@ -52,6 +52,8 @@ def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
     data = json.loads(path.read_text(encoding="utf-8-sig"))
     hints: list[dict] = []
     index: dict[str, dict] = {}
+    p0: list[dict] = []
+    p1: list[dict] = []
     for tp in data.get("test_points", []):
         tid = tp.get("id")
         if not tid:
@@ -61,9 +63,14 @@ def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
             "ac_id": tp.get("ac_id", ""),
             "module_id": tp.get("module_id", ""),
         }
+        hint = {"id": tid, "kind": tp.get("kind", ""), "title": tp.get("title", "")}
         if tp.get("priority") == "P0":
-            hints.append({"id": tid, "kind": tp.get("kind", ""), "title": tp.get("title", "")})
-    return hints[:8], index
+            p0.append(hint)
+        elif tp.get("priority") == "P1":
+            p1.append(hint)
+    # P0 全给 + P1 补充，上限 24 条：旧版只给 8 条 P0 是 trace 率 0.30 的主因
+    # （模型可见需求面太窄）；24 条约 +1.5k token/接口，换追溯覆盖率，账算得过来
+    return (p0 + p1)[:24], index
 
 
 def _case_from_ai(
