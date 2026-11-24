@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 from .config import LLMSettings
+from .agent import generate_agent
 from .generator import generate
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -30,13 +31,17 @@ def main(argv: list[str] | None = None) -> int:
         "--requirements", default=None,
         help="Phase 16 产物 requirements.json（可选：注入需求测试点提示 + 追溯）",
     )
+    p.add_argument(
+        "--mode", default="prompt", choices=["prompt", "agent"],
+        help="prompt=单发生成（默认）；agent=tool-loop 按需取数（token 曲线进 stats）",
+    )
     args = p.parse_args(argv)
 
     settings = LLMSettings.from_env()
     if args.provider:
         settings.provider = args.provider
 
-    case_set = generate(
+    kwargs = dict(
         endpoints_path=Path(args.endpoints),
         out_path=Path(args.out),
         settings=settings,
@@ -44,12 +49,19 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         requirements_path=Path(args.requirements) if args.requirements else None,
     )
+    case_set = generate_agent(**kwargs) if args.mode == "agent" else generate(**kwargs)
     s = case_set.stats
     print("[OK] 用例生成完成")
-    print(f"  接口数: {s['endpoints']}  provider: {s['provider']}  model: {s['model']}")
+    print(f"  接口数: {s['endpoints']}  provider: {s['provider']}  model: {s['model']}  mode: {s.get('mode', 'prompt')}")
     print(f"  规则用例: {s['rule_cases']}  AI用例: {s['ai_cases']}  (LLM 成功/失败接口: {s['ai_endpoints_ok']}/{s['ai_endpoints_failed']})")
     print(f"  分类分布: {s['by_category']}")
-    if s["req_points"]:
+    if s.get("agent_usage"):
+        au = s["agent_usage"]
+        print(f"  agent token 曲线: {au['prompt_tokens']} in / {au['completion_tokens']} out / "
+              f"{au['turns']} 轮 / {au['tool_calls']} 次工具调用")
+    if s.get("filled_rate") is not None and s.get("ai_cases"):
+        print(f"  AI 用例 filled 率: {s['filled_rate'] * 100:.1f}%")
+    if s.get("req_points"):
         print(f"  需求测试点: 注入 {s['req_points']} 条提示, 带追溯用例 {s['trace_cases']} 条")
     print(f"  产物 -> {args.out}")
     return 0

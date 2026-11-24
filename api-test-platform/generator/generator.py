@@ -156,14 +156,20 @@ def generate(
                 logger.warning("LLM 生成失败 %s: %s", ep.key, exc)
 
     case_set = TestCaseSet(cases=cases).merged_dedupe()
+    ai_cases_list = [c for c in case_set.cases if c.source == CaseSource.AI]
+    filled = [c for c in ai_cases_list
+              if c.description and (c.expected.status_codes or c.expected.status_class)]
     case_set.stats = {
         "endpoints": len(endpoints),
         "provider": settings.provider,
         "model": settings.model or "-",
+        "mode": "prompt",
         "rule_cases": sum(1 for c in case_set.cases if c.source == CaseSource.RULE),
-        "ai_cases": sum(1 for c in case_set.cases if c.source == CaseSource.AI),
+        "ai_cases": len(ai_cases_list),
         "ai_endpoints_ok": ai_stats["ok"],
         "ai_endpoints_failed": ai_stats["failed"],
+        "filled_rate": (round(len(filled) / len(ai_cases_list), 3)
+                        if ai_cases_list else 0.0),
         "by_category": _count_by_category(case_set.cases),
         "req_points": len(req_hints),                        # Phase 16 提示条数
         "trace_cases": sum(1 for c in case_set.cases if c.req_trace),
