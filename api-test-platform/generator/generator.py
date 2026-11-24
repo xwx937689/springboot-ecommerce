@@ -179,6 +179,9 @@ def generate(
                         if ai_cases_list else 0.0),
         "by_category": _count_by_category(case_set.cases),
         "req_points": len(req_hints),                        # Phase 16 提示条数
+        # QueryLog 思想（借鉴 WHartTest）：记录注入了哪些 hint id，
+        # 离线可评测"哪些需求提示从未被追溯命中"（死提示），指导检索优化
+        "hint_ids": [h.get("id") for h in req_hints],
         "trace_cases": sum(1 for c in case_set.cases if c.req_trace),
     }
 
