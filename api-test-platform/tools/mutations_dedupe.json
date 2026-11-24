@@ -1,0 +1,19 @@
+[
+  {"name": "M1-语义签名层失效（AC-013案回归）",
+   "old": "        if sig is not None:\n            seen_sig.setdefault(sig, len(out))",
+   "new": "        if False:\n            seen_sig.setdefault(sig, len(out))"},
+  {"name": "M2-标题全局唯一层失效（跨AC重复TP回归）",
+   "old": "        idx = seen_title.get(tp.title)",
+   "new": "        idx = None"},
+  {"name": "M3-合并丢追溯（rule_ids不再并入）",
+   "old": "    kept.rule_ids = list(dict.fromkeys(kept.rule_ids + dup.rule_ids))",
+   "new": "    kept.rule_ids = kept.rule_ids"},
+  {"name": "M4-合并不保留更完整预期",
+   "old": "            if len(tp.expected_results) > len(kept.expected_results):",
+   "new": "            if False:"},
+  {"name": "M5-三元组键丢kind（不同kind同标题同预期误合并）",
+   "old": "        triple = (tp.kind, tp.title, tp.expected_results)",
+   "new": "        triple = (tp.title, tp.expected_results)",
+   "equivalent": true,
+   "note": "第三层标题全局唯一已吸收该语义：同标题最终必合并，最终输出不变——等价变异，非测试盲区"}
+]
