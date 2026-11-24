@@ -92,6 +92,12 @@ def generate(
 
     # 3) LLM 增强：逐模块补充业务语义测试点
     if client is not None:
+        # A-1 源头预防：规则引擎已生成的 TP 按 AC 归组，注入 prompt 禁止 LLM
+        # 重复或同义改写——省 token，也让签名去重主要做兜底而非主力
+        existing_by_ac: dict[str, list[str]] = {}
+        for tp in tps:
+            if tp.ac_id:
+                existing_by_ac.setdefault(tp.ac_id, []).append(tp.title)
         ac_by_module: dict[str, list[AcceptanceCriterion]] = {}
         for ac in criteria:
             if ac.testable:
@@ -101,26 +107,16 @@ def generate(
             if not acs:
                 continue
             try:
-                tps.extend(_enrich_by_llm(client, module, acs))
+                tps.extend(_enrich_by_llm(client, module, acs, existing_by_ac))
                 stats["llm_modules_ok"] += 1
             except (LLMError, json.JSONDecodeError, ValueError,
                     AttributeError, TypeError) as exc:
                 stats["llm_modules_failed"] += 1
                 print(f"[WARN] LLM 测试点增强失败 {module.id}: {exc}")
 
-    # 3.5) 去重（三元组键 + 合并追溯，见 _dedupe_tps）
-    before = len(tps)
+    # 3.5) 去重（三元组精确键 + 语义签名，合并追溯，见 _dedupe_tps）
     tps, deduped_count = _dedupe_tps(tps)
     stats["tp_deduped"] = deduped_count
-    seen: set[str] = set()
-    deduped:list[TestPoint] = []
-    for tp in tps:
-        if tp.title in seen:
-            continue
-        seen.add(tp.title)
-        deduped.append(tp)
-    tps = deduped
-    stats["tp_deduped"] = before - len(tps)
     for i, tp in enumerate(tps, 1):
         tp.id = f"TP-{i:03d}"          # 统一重排，保证连续
     stats["test_points"] = len(tps)
@@ -239,29 +235,82 @@ def _tp_from_rule(rule: BusinessRule) -> TestPoint:
 def _rule_id_of(tp: TestPoint) -> str:
     m = re.search(r"(BR-\d{3})", tp.notes or "")
     return m.group(1) if m else ""
-def _dedupe_tps(tps: list[TestPoint]) -> tuple[list[TestPoint], int]:
-    """去重：键 = (kind, title, expected_results)。
+def _sig_key(tp: TestPoint) -> tuple | None:
+    """语义签名：(ac_id, kind, 标题首个数值, 判定方向)。
 
-    仅标题相同但预期不同 = 两个不同的测试（如两条 AC 截断后撞标题），
-    必须都保留、各带自己的追溯；三元组完全相同（同一规则经多条 AC
-    重复生成的边界 TP）才合并，合并时 rule_ids 并入首条，追溯不丢。
+    语义重复的 TP 几乎总是"同一 AC + 同类断言 + 同一边界值 + 同方向"，
+    只是措辞不同（如『取 5 个通过』vs『恰好 5 条通过』）。取标题第一个
+    数值做键：规则引擎标题"取 6件（超过上限 5）"首个数值是 6（测试输入），
+    LLM 标题"6 条失败"首个数值也是 6——对齐。无数值返回 None 不参与。
     """
-    seen: dict[tuple[str, str, str], int] = {}
+    m = re.search(r"\d+", tp.title)
+    if not m:
+        return None
+    if any(w in tp.title for w in ("通过", "接受", "成功")):
+        direction = "pass"
+    elif any(w in tp.title for w in ("拒绝", "失败", "不通过")):
+        direction = "reject"
+    else:
+        direction = "other"
+    return (tp.ac_id, tp.kind, m.group(), direction)
+
+
+def _merge_into(kept: TestPoint, dup: TestPoint) -> None:
+    """合并追溯：rule_ids 并入首条，ac_id 缺失时补齐——去重不丢追溯。"""
+    kept.rule_ids = list(dict.fromkeys(kept.rule_ids + dup.rule_ids))
+    if not kept.ac_id and dup.ac_id:
+        kept.ac_id = dup.ac_id
+    if dup.ac_id and dup.ac_id != kept.ac_id:
+        tag = f"；亦覆盖 {dup.ac_id}"
+        if tag not in (kept.notes or ""):
+            kept.notes = ((kept.notes or "") + tag)[:200]
+
+
+def _dedupe_tps(tps: list[TestPoint]) -> tuple[list[TestPoint], int]:
+    """三层去重，返回 (去重后列表, 合并条数)。
+
+    第一层：三元组精确键 (kind, title, expected_results)——同一规则经多条
+      AC 重复生成的完全相同 TP；仅标题同但预期不同=两个不同的测试，都保留。
+    第二层：语义签名 _sig_key——规则层与 LLM 层对同一语义的措辞改写
+      （AC-013 案例的根治）。命中签名视为重复，合并追溯。
+    第三层：标题全局唯一硬约束——跨 AC/跨子模块的 LLM 重复生成（标尺
+      no_duplicate_titles 的生成端镜像）；保留更完整的预期，副 AC 记入 notes。
+    """
+    seen_triple: dict[tuple[str, str, str], int] = {}
+    seen_sig: dict[tuple, int] = {}
     out: list[TestPoint] = []
     merged = 0
     for tp in tps:
-        key = (tp.kind, tp.title, tp.expected_results)
-        idx = seen.get(key)
+        triple = (tp.kind, tp.title, tp.expected_results)
+        sig = _sig_key(tp)
+        idx = seen_triple.get(triple)
+        if idx is None and sig is not None:
+            idx = seen_sig.get(sig)
         if idx is not None:
-            kept = out[idx]
-            kept.rule_ids = list(dict.fromkeys(kept.rule_ids + tp.rule_ids))
-            if not kept.ac_id and tp.ac_id:
-                kept.ac_id = tp.ac_id
+            _merge_into(out[idx], tp)
             merged += 1
             continue
-        seen[key] = len(out)
+        seen_triple[triple] = len(out)
+        if sig is not None:
+            seen_sig.setdefault(sig, len(out))
         out.append(tp)
-    return out, merged
+    # 第三层：标题全局唯一硬约束——跨 AC/跨子模块的 LLM 重复生成
+    # （标尺 no_duplicate_titles 是全局口径，生成端镜像必须同口径）。
+    # 合并时保留更完整的预期，副 AC 记入 notes 保审计链。
+    seen_title: dict[str, int] = {}
+    out2: list[TestPoint] = []
+    for tp in out:
+        idx = seen_title.get(tp.title)
+        if idx is not None:
+            kept = out2[idx]
+            if len(tp.expected_results) > len(kept.expected_results):
+                kept.expected_results = tp.expected_results
+            _merge_into(kept, tp)
+            merged += 1
+            continue
+        seen_title[tp.title] = len(out2)
+        out2.append(tp)
+    return out2, merged
 
 
 def _priority(text: str, rules: list[BusinessRule]) -> Priority:
@@ -272,9 +321,10 @@ def _priority(text: str, rules: list[BusinessRule]) -> Priority:
 # ---------------------------------------------------------------- LLM 增强
 
 def _enrich_by_llm(
-    client, module: ReqModule, acs: list[AcceptanceCriterion]
+    client, module: ReqModule, acs: list[AcceptanceCriterion],
+    existing_by_ac: dict[str, list[str]] | None = None,
 ) -> list[TestPoint]:
-    reply = client.complete(_SYSTEM_PROMPT, _build_prompt(module, acs))
+    reply = client.complete(_SYSTEM_PROMPT, _build_prompt(module, acs, existing_by_ac))
     raw_items = extract_json_array(reply.text)
     ac_by_id = {ac.id: ac for ac in acs}      # 只允许引用本模块的 AC
     out: list[TestPoint] = []
@@ -320,12 +370,28 @@ def _enrich_by_llm(
     return out
 
 
-def _build_prompt(module: ReqModule, acs: list[AcceptanceCriterion]) -> str:
+def _build_prompt(
+    module: ReqModule, acs: list[AcceptanceCriterion],
+    existing_by_ac: dict[str, list[str]] | None = None,
+) -> str:
     ac_lines = "\n".join(f"- {a.id}: {a.text}" for a in acs)
+    existing_block = ""
+    if existing_by_ac:
+        ex_lines = "\n".join(
+            f"- {a.id}: {'；'.join(existing_by_ac[a.id])}"
+            for a in acs if existing_by_ac.get(a.id)
+        )
+        if ex_lines:
+            existing_block = (
+                "以下测试点已由规则引擎生成，禁止重复或同义改写"
+                "（换个说法也不行），只补充它们未覆盖的维度：\n"
+                f"{ex_lines}\n\n"
+            )
     return (
         f"章节：{module.title}（ID={module.id}）\n"
         f"已有验收标准：\n{ac_lines}\n\n"
-        "为每条验收标准补充 1~2 个业务语义测试点（异常流/状态组合/重复提交等），\n"
+        + existing_block
+        + "为每条验收标准补充 1~2 个业务语义测试点（异常流/状态组合/重复提交等），\n"
         "每条必须引用上面已有的 ac_id。不要重复正向用例。\n\n"
         "expected 必须是【单一可断言】的结果（不要写多个期望并列）；\n"
         "steps 推不出真实操作步骤就给空数组，不要编造点击操作。\n\n"
