@@ -50,6 +50,25 @@ _SYSTEM_PROMPT = (
 _TP_KINDS = {"positive", "boundary", "negative", "exception"}
 _CORE_WORDS = ("支付", "订单", "登录", "注册", "库存")   # 核心业务词 -> P0
 
+# 适用域分类（T2 需求端分流，确定性关键词，宁漏勿误：只拦高置信特征，拿不准一律 api）
+_DOC_SPEC_MARKS = ("标题", "文档", "版本号", "迭代", "产品标识", "创建日期")
+# 注意：不含"流转"——实证复盘发现它会误拦 API 可验证的渠道号一致性需求
+# （TP-011 已被用例追溯命中却被误标 data_layer），宁可放行让死提示分析兜底
+_DATA_LAYER_MARKS = ("让利金额", "支付行", "商品行", "落库", "写入", "同步至")
+
+
+def _classify_domain(title: str) -> str:
+    """TP 适用域：api（默认）/ doc_spec（查 PRD 自身）/ data_layer（后端数据加工）。
+
+    实证依据：死提示分析 15/24 中 8 条 doc_spec（24 接口跑不出来）+ 13 接口全量
+    复核确认 data_layer 类在整个 API 面上无出口（61 接口只多救回 2 条）。
+    """
+    if any(m in title for m in _DOC_SPEC_MARKS):
+        return "doc_spec"
+    if any(m in title for m in _DATA_LAYER_MARKS):
+        return "data_layer"
+    return "api"
+
 
 def generate(
     modules: list[ReqModule],
@@ -114,6 +133,11 @@ def generate(
                 stats["llm_modules_failed"] += 1
                 print(f"[WARN] LLM 测试点增强失败 {module.id}: {exc}")
 
+    # 3.4) 适用域打标（产生时盖章，集中一处，规则层/LLM 层全覆盖）：
+    #      下游按域路由——doc_spec/data_layer 不进接口用例 hint 池
+    for tp in tps:
+        tp.domain = _classify_domain(tp.title)
+
     # 3.5) 去重（三元组精确键 + 语义签名，合并追溯，见 _dedupe_tps）
     tps, deduped_count = _dedupe_tps(tps)
     stats["tp_deduped"] = deduped_count
@@ -121,6 +145,8 @@ def generate(
         tp.id = f"TP-{i:03d}"          # 统一重排，保证连续
     stats["test_points"] = len(tps)
     stats["by_kind"] = {k: sum(1 for t in tps if t.kind == k) for k in sorted(_TP_KINDS)}
+    stats["by_domain"] = {d: sum(1 for t in tps if t.domain == d)
+                          for d in ("api", "doc_spec", "data_layer")}
     return tps, stats
 
 

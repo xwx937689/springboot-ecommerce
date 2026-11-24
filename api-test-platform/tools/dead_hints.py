@@ -25,10 +25,12 @@ def main(argv: list[str] | None = None) -> int:
     tps = req.get("test_points", [])
     titles = {t["id"]: t.get("title", "") for t in tps if t.get("id")}
     # 与 generator._load_req_points 同口径：P0 全量 + P1 补充，上限 24，
-    # 且排除文档规范类 TP（适用域分流）——评测基准必须等于实际注入集合
-    from generator.generator import _is_doc_spec_tp
-    p0 = [t["id"] for t in tps if t.get("priority") == "P0" and not _is_doc_spec_tp(str(t.get("title", "")))]
-    p1 = [t["id"] for t in tps if t.get("priority") == "P1" and not _is_doc_spec_tp(str(t.get("title", "")))]
+    # 只统计 api 域（domain 字段优先，旧产物回退关键词）——评测基准必须等于实际注入集合
+    from generator.generator import _fallback_domain
+    p0 = [t["id"] for t in tps if t.get("priority") == "P0"
+          and (t.get("domain") or _fallback_domain(str(t.get("title", "")))) == "api"]
+    p1 = [t["id"] for t in tps if t.get("priority") == "P1"
+          and (t.get("domain") or _fallback_domain(str(t.get("title", "")))) == "api"]
     hints = (p0 + p1)[:24]
 
     alive = [h for h in hints if h in traced]

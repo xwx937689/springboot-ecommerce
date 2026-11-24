@@ -47,8 +47,10 @@ def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
     """读 Phase 16 产物 requirements.json。
 
     返回 (需求测试点提示[最多 24 条], tp_id -> 追溯信息)。
-    P0 全给 + P1 补充；文档规范类 TP（检查 PRD 自身的规则）不注入——
-    它们永远不可能被 API 用例追溯（死提示分析的实证结论），注入纯浪费 token。
+    P0 全给 + P1 补充；只注入 api 域 TP——domain 字段优先（T2 产生时打标），
+    旧产物无字段时回退标题关键词。doc_spec/data_layer 不注入：
+    doc_spec 永远不可能被 API 用例追溯（死提示 8/24 实证），
+    data_layer 在 61 接口全量下也无出口（只多救回 2 条）。
     """
     data = json.loads(path.read_text(encoding="utf-8-sig"))
     index: dict[str, dict] = {}
@@ -63,7 +65,7 @@ def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
             "ac_id": tp.get("ac_id", ""),
             "module_id": tp.get("module_id", ""),
         }
-        if _is_doc_spec_tp(str(tp.get("title", ""))):
+        if (tp.get("domain") or _fallback_domain(str(tp.get("title", "")))) != "api":
             continue
         hint = {"id": tid, "kind": tp.get("kind", ""), "title": tp.get("title", "")}
         if tp.get("priority") == "P0":
@@ -75,14 +77,17 @@ def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
     return (p0 + p1)[:24], index
 
 
-# 文档规范类 TP 的标题特征（死提示分析实证：TP-001~004/027/030/034/041 全命中）。
-# 这类 TP 检查的是 PRD 文档自身（标题含产品标识、版本号格式、字段为空判定），
-# 下游是文档质量检查，不是 API 用例——宁漏勿误，只拦高置信特征。
+# 旧产物回退分类（与新产物的 domain 字段同口径，词表源自 testpoints._classify_domain）
 _DOC_SPEC_MARKS = ("标题", "文档", "版本号", "迭代", "产品标识", "创建日期")
+_DATA_LAYER_MARKS = ("让利金额", "支付行", "商品行", "落库", "写入", "同步至")
 
 
-def _is_doc_spec_tp(title: str) -> bool:
-    return any(m in title for m in _DOC_SPEC_MARKS)
+def _fallback_domain(title: str) -> str:
+    if any(m in title for m in _DOC_SPEC_MARKS):
+        return "doc_spec"
+    if any(m in title for m in _DATA_LAYER_MARKS):
+        return "data_layer"
+    return "api"
 
 
 def _case_from_ai(

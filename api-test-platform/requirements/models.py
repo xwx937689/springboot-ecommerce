@@ -145,6 +145,13 @@ class TestPoint(BaseModel):
     preconditions: str = "" #前置条件
     steps: list[str] = Field(default_factory=list) # 测试步骤
     expected_results: str = ""
+    # 适用域（T2 需求端分流，产生时打标，确定性关键词、宁漏勿误）：
+    #   api        接口可验证（默认）——进用例生成的 hint 池；
+    #   doc_spec   检查 PRD 文档自身的规则（标题含产品标识/版本号等）——永远不可能被
+    #              API 用例追溯（死提示实证 8/24），路由到文档质量检查；
+    #   data_layer 后端数据加工断言（渠道流转/B2B 让利/支付行字段等）——61 接口全量
+    #              实证在 API 面上无出口，路由到数据核对类下游。
+    domain: Literal["api", "doc_spec", "data_layer"] = "api"
 
 
 class AnalysisMetrics(BaseModel):
