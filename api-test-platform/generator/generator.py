@@ -46,11 +46,11 @@ def load_endpoints(path: Path) -> tuple[list[Endpoint], dict[str, dict]]:
 def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
     """读 Phase 16 产物 requirements.json。
 
-    返回 (P0 测试点提示[最多 8 条], tp_id -> 追溯信息)。
-    只用优先级最高的几条做提示，避免长 PRD 把 prompt 撑爆。
+    返回 (需求测试点提示[最多 24 条], tp_id -> 追溯信息)。
+    P0 全给 + P1 补充；文档规范类 TP（检查 PRD 自身的规则）不注入——
+    它们永远不可能被 API 用例追溯（死提示分析的实证结论），注入纯浪费 token。
     """
     data = json.loads(path.read_text(encoding="utf-8-sig"))
-    hints: list[dict] = []
     index: dict[str, dict] = {}
     p0: list[dict] = []
     p1: list[dict] = []
@@ -63,6 +63,8 @@ def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
             "ac_id": tp.get("ac_id", ""),
             "module_id": tp.get("module_id", ""),
         }
+        if _is_doc_spec_tp(str(tp.get("title", ""))):
+            continue
         hint = {"id": tid, "kind": tp.get("kind", ""), "title": tp.get("title", "")}
         if tp.get("priority") == "P0":
             p0.append(hint)
@@ -71,6 +73,16 @@ def _load_req_points(path: Path) -> tuple[list[dict], dict[str, dict]]:
     # P0 全给 + P1 补充，上限 24 条：旧版只给 8 条 P0 是 trace 率 0.30 的主因
     # （模型可见需求面太窄）；24 条约 +1.5k token/接口，换追溯覆盖率，账算得过来
     return (p0 + p1)[:24], index
+
+
+# 文档规范类 TP 的标题特征（死提示分析实证：TP-001~004/027/030/034/041 全命中）。
+# 这类 TP 检查的是 PRD 文档自身（标题含产品标识、版本号格式、字段为空判定），
+# 下游是文档质量检查，不是 API 用例——宁漏勿误，只拦高置信特征。
+_DOC_SPEC_MARKS = ("标题", "文档", "版本号", "迭代", "产品标识", "创建日期")
+
+
+def _is_doc_spec_tp(title: str) -> bool:
+    return any(m in title for m in _DOC_SPEC_MARKS)
 
 
 def _case_from_ai(
