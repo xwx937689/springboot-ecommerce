@@ -76,6 +76,7 @@ def extract(
                 rules.extend(r)
                 criteria.extend(a)
                 br_seq[0], ac_seq[0] = local_br[0], local_ac[0]  # 全模块成功才提交
+                used_llm = True   # 成功（含部分丢弃）= LLM 引擎接管，绝不再跑规则引擎（防双引擎重复产出）
                 stats["llm_modules_ok"] += 1
                 if dropped:
                     stats["llm_modules_partial"] += 1  # 部分成功不再冒充完整成功
@@ -314,7 +315,7 @@ def _extract_by_llm(
         raise ValueError("LLM 未产出任何合法条目")
     if dropped:
         print(f"[WARN] LLM 条目 {module.id}: 丢弃 {dropped} 条（无原文证据/结构非法）")
-    return rules, criteria,dropped
+    return rules, criteria, dropped
 
 
 def _build_prompt(module: ReqModule) -> str:
